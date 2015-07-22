@@ -4,6 +4,8 @@ import Sailfish.Silica 1.0
 Rectangle {
     property int digit
     property string text_color
+    property double pos_x
+    property double pos_y
 
     height: width
     radius: width / 10
@@ -21,5 +23,6 @@ Rectangle {
         color: text_color
     }
 
-    Behavior on y { NumberAnimation { duration: 400; easing.type: Easing.OutBounce; easing.amplitude: 0.5; } }
+    Behavior on y { NumberAnimation { duration: 50; easing.type: Easing.Linear } }
+    Behavior on x { NumberAnimation { duration: 50; easing.type: Easing.Linear } }
 }
