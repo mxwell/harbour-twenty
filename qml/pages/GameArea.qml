@@ -30,6 +30,8 @@
 
 import QtQuick 2.1
 import Sailfish.Silica 1.0
+import "./Logic.js" as Logic
+import "./Util.js" as Util
 
 
 Page {
@@ -99,11 +101,6 @@ Page {
 
             Component.onCompleted: {
                 game.box_component = Qt.createComponent("Box.qml")
-
-                game.boxes = new Array(kAreaRows)
-                for (var i = 0; i < kAreaRows; ++i)
-                    game.boxes[i] = new Array(kAreaColumns)
-
                 game.layout()
             }
         }
@@ -115,12 +112,7 @@ Page {
 
         property var box_component
         property var boxes
-                                    /*   1     |    2     |   3      |    4     |   5      |    6     |    7     |    8     |    9    */
-        property var colors:        ["#ffff9c", "#ff2421", "#00f3ad", "#298aff", "#dea6ff", "#31eb00", "#ffd2bd", "#9c00f7", "#ffb600" ]
-        property var text_colors:   ["#8b8e00", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ff5500", "#ffffff", "#ffffff" ]
-
-        property var corners_dx: [0, 1, 1, 0]
-        property var corners_dy: [0, 0, 1, 1]
+        property var used
 
         // box_size + box_spacing = box_total_size
         property int box_total_size
@@ -131,14 +123,7 @@ Page {
         // group of picked boxes: it contains the boxes themselves
         property var pgroup: []
 
-        property var adjacent_dr: [-1, 0, 0, 1]
-        property var adjacent_dc: [0, -1, 1, 0]
-
         property double kEps: 1e-6
-        property int kTop: 0
-        property int kLeft: 1
-        property int kRight: 2
-        property int kBottom: 3
 
         function generate_digit(upper_digit) {
             var digit
@@ -152,16 +137,31 @@ Page {
         }
 
         function unbind_from_grid(box) {
+            //console.log("unbinding at row " + box.row + ", column " + box.column)
             boxes[box.row][box.column] = undefined
         }
 
+        // return true if box is successfully bound, otherwise return false (= it was lost)
         function bind_to_grid(box, r, c) {
             if (typeof boxes[r][c] !== 'undefined') {
-                console.log("about to lose box at " + r + "," + c)
+                if (boxes[r][c].digit !== box.digit) {
+                    console.log("ERROR: losing box at " + r + "," + c)
+                } else if (boxes[r][c] === box) {
+                    console.log("ERROR: the same")
+                    return true
+                } else {
+                    console.log("merging boxes with digit " + box.digit)
+                }
+                box.unbind_all()
+                boxes[r][c].unbind_all()
+                box.destroy()
+                boxes[r][c].evolve()
+                return false
             }
             boxes[r][c] = box
             box.set_cell(r, c)
             //console.log("bind " + box.digit + " at " + box.row + "," + box.column)
+            return true
         }
 
         function align_with_grid(box, r, c) {
@@ -209,26 +209,47 @@ Page {
             var r = kAreaRows - 1
             for (var c = 0; c < kAreaColumns; ++c) {
                 var upper = -1
-                if (boxes[r - 1][c] !== undefined)
+                if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
                 var digit = generate_digit(upper)
-                var color_id = (digit - 1) % colors.length
-                var b = box_component.createObject(table, {
-                                             digit: digit,
-                                             body_color: colors[color_id],
-                                             text_color: text_colors[color_id],
-                                             width: box_total_size,
-                                             box_spacing: box_spacing })
+                var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
+                b.set_digit(digit)
                 align_with_grid(b, r, c)
             }
             if (hor_bind) {
-                boxes[r][0].set_binding(kRight, true)
-                boxes[r][1].set_binding(kLeft, true)
+                boxes[r][0].bind(Logic.kRight, boxes[r][1])
+                boxes[r][1].bind(Logic.kLeft, boxes[r][0])
             }
             if (ver_bind) {
-                boxes[r][0].set_binding(kTop, true)
-                boxes[r - 1][0].set_binding(kBottom, true)
+                boxes[r][0].bind(Logic.kTop, boxes[r - 1][0])
+                boxes[r - 1][0].bind(Logic.kBottom, boxes[r][0])
             }
+        }
+
+        // return array with all boxes connected to @picked
+        function bfs(picked) {
+            if (typeof picked.row === 'undefined' || typeof picked.column === 'undefined') {
+                console.log("ERROR: picked has no row or column")
+            }
+            if (typeof used[picked.row] === 'undefined') {
+                console.log("used[" + picked.row + "] is undef")
+            }
+
+            used[picked.row][picked.column] = true
+            var queue = [picked]
+            var qfront = 0
+            while (qfront < queue.length) {
+                var from = queue[qfront]
+                ++qfront
+                for (var dir = Logic.kTop; dir <= Logic.kBottom; ++dir) {
+                    var to = from.adjacent[dir]
+                    if (typeof to === 'undefined' || used[to.row][to.column])
+                        continue
+                    used[to.row][to.column] = true
+                    queue.push(to)
+                }
+            }
+            return queue
         }
 
         function select(x, y) {
@@ -245,34 +266,10 @@ Page {
             // TODO implement "catching"
             if (picked.floating)
                 return
-            var qfront = 0
-            // queue is surely empty now
-            var queue = pgroup
-            picked.floating = true
-            queue.push(picked)
-            while (qfront < queue.length) {
-                var box = queue[qfront]
-                ++qfront
-                var r = box.row, c = box.column
-                for (var dir = 0; dir < 4; ++dir) {
-                    if (box.adjacent[dir]) {
-                        var to_r = r + adjacent_dr[dir]
-                        var to_c = c + adjacent_dc[dir]
-                        var to = boxes[to_r][to_c]
-                        if (!to.floating) {
-                            to.floating = true
-                            queue.push(to)
-                        }
-                    }
-                }
-            }
-
-            var temp = []
-            for (var i in pgroup) {
-                temp.push(pgroup[i].row + "," + pgroup[i].column)
-            }
-
-            //console.log("picked " + pgroup.length + " box(es):" + temp.join("  "))
+            Util.fill_2d_array(used, false)
+            pgroup = bfs(picked)
+            for (var i in pgroup)
+                pgroup[i].floating = true
         }
 
         function make_point(x, y) {
@@ -308,9 +305,7 @@ Page {
             var target = make_point(x, y)
             var step_limit = box_half_size - kEps
 
-            while (true) {
-                var i, t, cur_center, cur_next, box
-
+            while (pgroup.length > 0) {
                 var center = center_of_box(pgroup[0])
                 // 1. Move a little
                 var move = point_diff(target, center)
@@ -318,7 +313,7 @@ Page {
                 if (Math.abs(move.x) > kEps) {
                     moving = true
                     if (Math.abs(move.x) > step_limit) {
-                        t = Math.abs(move.x / step_limit)
+                        var t = Math.abs(move.x / step_limit)
                         move.x /= t
                         move.y /= t
                     }
@@ -326,7 +321,7 @@ Page {
                 if (Math.abs(move.y) > kEps) {
                     moving = true
                     if (Math.abs(move.y) > step_limit) {
-                        t = Math.abs(move.y / step_limit)
+                        var t = Math.abs(move.y / step_limit)
                         move.x /= t
                         move.y /= t
                     }
@@ -336,22 +331,20 @@ Page {
                     break
 
                 // 2. Check for collision with walls and push out
-                for (i in pgroup) {
-                    cur_center = center_of_box(pgroup[i])
-                    cur_next = point_sum(cur_center, move)
+                for (var i in pgroup) {
+                    var cur_center = center_of_box(pgroup[i])
+                    var cur_next = point_sum(cur_center, move)
                     cur_next.x = Math.min(Math.max(cur_next.x, box_half_size + kEps), table.width - kEps - box_half_size)
                     cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps), table.height - kEps - box_half_size)
                     move = point_diff(cur_next, cur_center)
                 }
-                var temp = point_sum(center, move)
-                //console.log("current new center: " + y_to_row(temp.y) + "," + x_to_column(temp.x))
 
                 // 3. Find bounding cells ranges
                 var left_column = kAreaColumns - 1, right_column = 0
                 var top_row = kAreaRows - 1, bottom_row = 0
-                for (i in pgroup) {
-                    cur_center = center_of_box(pgroup[i])
-                    cur_next = point_sum(cur_center, move)
+                for (var i in pgroup) {
+                    var cur_center = center_of_box(pgroup[i])
+                    var cur_next = point_sum(cur_center, move)
                     left_column = Math.min(left_column, x_to_column(cur_next.x - box_half_size))
                     right_column = Math.max(right_column, x_to_column(cur_next.x + box_half_size))
                     top_row = Math.min(top_row, y_to_row(cur_next.y - box_half_size))
@@ -362,31 +355,24 @@ Page {
                 top_row = Math.min(Math.max(top_row, 0), kAreaRows - 1)
                 bottom_row = Math.min(Math.max(bottom_row, 0), kAreaRows - 1)
 
-                //console.log("columns, rows: " + left_column + "-" + right_column + ", " + top_row + "-" + bottom_row)
-
-                //console.log("move: " + Math.floor(move.x) + "," + Math.floor(move.y))
-                //var box = make_box(next)
-
                 // 3. Check for collision with boxes and push out
-                var intact = []
                 for (var column = left_column; column <= right_column; ++column) {
                     for (var row = top_row; row <= bottom_row; ++row) {
                         var fixed = boxes[row][column]
                         if (typeof fixed === 'undefined' || fixed.floating)
                             continue
-                        for (i in pgroup) {
+                        for (var i in pgroup) {
                             var cur = make_point(pgroup[i].pos_x, pgroup[i].pos_y)
-                            box = point_sum(cur, move)
-                            if (!find_collision(fixed, box))
+                            var box = point_sum(cur, move)
+                            if (fixed.digit === pgroup[i].digit || !find_collision(fixed, box))
                                 continue
                             // find a direction with the smallest overlap
                             var overlap = 1e9
                             var reverse = make_point(0, 0)
-                            var o
                             if (move.x > kEps && cell_is_free(row, column - 1)) {
                                 var right = box.x + box_size
                                 var fixed_left = fixed.pos_x
-                                o = right - fixed_left
+                                var o = right - fixed_left
                                 if (0 < o && o < box_size) {
                                     overlap = right - fixed_left
                                     reverse.x = -(right - fixed_left + kEps)
@@ -394,7 +380,7 @@ Page {
                             } else if (move.x < -kEps && cell_is_free(row, column + 1)) {
                                 var left = box.x
                                 var fixed_right = fixed.pos_x + box_size
-                                o = fixed_right - left
+                                var o = fixed_right - left
                                 if (0 < o && o < box_size) {
                                     overlap = fixed_right - left
                                     reverse.x = fixed_right - left + kEps
@@ -403,7 +389,7 @@ Page {
                             if (move.y > kEps && cell_is_free(row - 1, column)) {
                                 var bottom = box.y + box_size
                                 var fixed_top = fixed.pos_y
-                                o = bottom - fixed_top
+                                var o = bottom - fixed_top
                                 if (0 < o && o < box_size && o < overlap) {
                                     overlap = bottom - fixed_top
                                     reverse.x = 0
@@ -412,7 +398,7 @@ Page {
                             } else if (move.y < -kEps && cell_is_free(row + 1, column)) {
                                 var top = box.y
                                 var fixed_bottom = fixed.pos_y + box_size
-                                o = fixed_bottom - top
+                                var o = fixed_bottom - top
                                 if (0 < o && o < box_size && o < overlap) {
                                     overlap = fixed_bottom - top
                                     reverse.x = 0
@@ -434,50 +420,109 @@ Page {
                 var column_add = x_to_column(center.x + move.x) - x_to_column(center.x)
                 var move_in_grid = row_add !== 0 || column_add !== 0
                 // Move the group
-                for (i in pgroup) {
-                    box = pgroup[i]
+                for (var i in pgroup) {
+                    var box = pgroup[i]
                     box.move_with_vector(move)
                     if (move_in_grid)
                         unbind_from_grid(box)
                 }
                 // Bind boxes to grid again, if they've been moved out of cells
                 if (move_in_grid) {
-                    for (i in pgroup) {
-                        box = pgroup[i]
-                        bind_to_grid(box, box.row + row_add, box.column + column_add)
+                    // flag if some boxes of the pgroup were merged with fixed boxes
+                    var lost = false
+                    for (var i in pgroup) {
+                        var box = pgroup[i]
+                        if (!bind_to_grid(box, box.row + row_add, box.column + column_add)) {
+                            pgroup[i] = undefined
+                            lost = true
+                        }
                     }
+                    if (typeof pgroup[0] === 'undefined') {
+                        complete()
+                        return
+                    } else if (lost) {
+                        for (var i in pgroup) {
+                            var b = pgroup[i]
+                            if (typeof b !== 'undefined')
+                                b.floating = false
+                        }
+                        Util.fill_2d_array(used, false)
+                        pgroup = bfs(pgroup[0])
+                        for (var i in pgroup) {
+                            pgroup[i].floating = true
+                        }
+                    }
+                    gravitate()
                 }
                 //console.log("put into cell " + pgroup[0].row + "," + pgroup[0].column)
             }
         }
 
+
+        /* Search at each step for boxes, that should fall at least 1 level down
+         * and drop them 1 unit down exactly */
+        // TODO care for floating boxes
+        function gravitate() {            
+            /* boxes falling at this step */
+            var fgroup
+            do {
+                fgroup = []
+                Util.fill_2d_array(used, false)
+                for (var r = 0; r < kAreaRows; ++r) {
+                    for (var c = 0; c < kAreaColumns; ++c) {
+                        var box = boxes[r][c]
+                        if (typeof box === 'undefined' || used[r][c] || box.floating)
+                            continue
+                        var group = bfs(box)
+                        // flag of whether could the group be dropped 1 unit down
+                        var flag = true
+                        for (var i in group) {
+                            var b = group[i]
+                            if (b.adjacent[Logic.kBottom])
+                                continue
+                            var next_row = b.row + 1
+                            if (next_row === kAreaRows) {
+                                flag = false
+                                break
+                            }
+                            var under = boxes[next_row][b.column]
+                            if (typeof under !== 'undefined' && under.digit !== b.digit) {
+                                flag = false
+                                break
+                            }
+                        }
+                        if (flag)
+                            fgroup = fgroup.concat(group)
+                    }
+                }
+                // unbind all falling
+                for (var i in fgroup) {
+                    var box = fgroup[i]
+                    unbind_from_grid(box)
+                }
+                // and bind them lower
+                for (var i in fgroup) {
+                    var box = fgroup[i]
+                    align_with_grid(box, box.row + 1, box.column)
+                }
+            } while (fgroup.length > 0);
+        }
+
         function complete() {
             if (pgroup.length === 0)
                 return
-            // Find the smallest fall in group and also unbind boxes from the grid
-            var fall = kAreaRows - 1
+            //console.log("releasing")
+            // relax group
             for (var i in pgroup) {
                 var box = pgroup[i]
-                var c = box.column
-                var r = box.row
-                var cur = 0
-                for (++r; r < kAreaRows; ++r) {
-                    if (typeof boxes[r][c] !== 'undefined' && !boxes[r][c].floating) {
-                        break
-                    } else {
-                        ++cur
-                    }
-                }
-                fall = Math.min(fall, cur)
-                unbind_from_grid(box)
-            }
-            // Bind boxes back to grid, but @fall rows lower
-            //console.log("releasing into " + (pgroup[0].row + fall) + "," + pgroup[0].column + "(fall " + fall + ")")
-            for (var i in pgroup) {
-                align_with_grid(pgroup[i], pgroup[i].row + fall, pgroup[i].column)
-                pgroup[i].floating = false
+                if (typeof box === 'undefined')
+                    continue
+                box.move_to(grid_x(box.column), grid_y(box.row))
+                box.floating = false
             }
             pgroup = []
+            // drop all
+            gravitate()
         }
 
         // @a is a normal box object, @p is a box, represented by a topleft point
@@ -487,8 +532,8 @@ Page {
         }
 
         function destroy_boxes() {
-            for (var r = 0; r < kAreaRows; ++r)
-                for (var c = 0; c < kAreaColumns; ++c)
+            for (var r in boxes)
+                for (var c in boxes[r])
                     if (typeof boxes[r][c] !== 'undefined') {
                         boxes[r][c].destroy()
                         boxes[r][c] = undefined
@@ -496,8 +541,11 @@ Page {
         }
 
         function layout() {
-            if (typeof boxes === 'undefined')
-                return
+            if (typeof boxes !== 'undefined') {
+                destroy_boxes()
+            }
+            boxes = Util.make_2d_array(kAreaRows, kAreaColumns)
+            used = Util.make_2d_array(kAreaRows, kAreaColumns)
 
             var hsize = table.width / kAreaColumns
             var vsize = table.height / kAreaRows
@@ -505,10 +553,12 @@ Page {
             box_spacing = box_total_size / 10
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
-            destroy_boxes()
+
             add_row(true, false)
             lift_boxes()
             add_row(false, true)
+            lift_boxes()
+            add_row(false, false)
             //test_1()
             //test_2()
         }

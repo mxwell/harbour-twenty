@@ -1,10 +1,9 @@
 import QtQuick 2.1
 import Sailfish.Silica 1.0
+import "./Logic.js" as Logic
 
 Rectangle {
     property int digit
-    property string body_color
-    property string text_color
     // user-faced X coordinate of the topleft corner
     property double pos_x
     // user-faced Y coordinate of the topleft corner
@@ -16,10 +15,22 @@ Rectangle {
     // flag for box not bound to the grid
     property bool floating: false
     // bindings to adjacent boxes: relative position
-    // of the neighbor is specified by GameArea's adjacent_dr and adjacent_dc
-    property var adjacent: [false, false, false, false]
+    // of the neighbor is specified by Logic.adjacent_dr and Logic.adjacent_dc
+    property var adjacent: [undefined, undefined, undefined, undefined]
     // saved from GameArea
     property int box_spacing
+    property var saved_neighbor
+
+    function set_digit(d) {
+        digit = d
+        label.text = String(d)
+        body.color = Logic.body_colors[(d - 1) % Logic.body_colors.length]
+        label.color = Logic.text_colors[(d - 1) % Logic.text_colors.length]
+    }
+
+    function evolve() {
+        set_digit(digit + 1)
+    }
 
     function move_to(tx, ty) {
         pos_x = tx
@@ -45,12 +56,31 @@ Rectangle {
         column = c
     }
 
-    function set_binding(direction, is_visible) {
-        if (direction === 2)
-            right_binding.visible = is_visible
-        else if (direction === 3)
-            bottom_binding.visible = is_visible
-        adjacent[direction] = is_visible
+    function set_binding(direction, visible) {
+        if (direction === Logic.kRight)
+            right_binding.visible = visible
+        else if (direction === Logic.kBottom)
+            bottom_binding.visible = visible
+    }
+
+    function bind(direction, neighbor) {
+        adjacent[direction] = neighbor
+        set_binding(direction, true)
+    }
+
+    function unbind(direction, mutual) {
+        var neighbor = adjacent[direction]
+        if (typeof neighbor === 'undefined')
+            return
+        adjacent[direction] = undefined
+        set_binding(direction, false)
+        if (mutual)
+            neighbor.unbind(Logic.reversedDirection[direction], false)
+    }
+
+    function unbind_all() {
+        for (var dir = Logic.kTop; dir <= Logic.kBottom; ++dir)
+            unbind(dir, true)
     }
 
     height: width
@@ -64,17 +94,14 @@ Rectangle {
         height: body.width
         radius: body.width / 10
         antialiasing: true
-        color: body_color
 
         Label {
             id: label
-            text: String(digit)
             anchors.fill: parent
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             font.pixelSize: height * 7 / 10
             font.bold: true
-            color: text_color
         }
     }
 

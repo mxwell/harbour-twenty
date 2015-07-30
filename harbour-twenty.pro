@@ -25,7 +25,9 @@ OTHER_FILES += qml/harbour-twenty.qml \
     translations/*.ts \
     harbour-twenty.desktop \
     qml/pages/GameArea.qml \
-    qml/pages/Box.qml
+    qml/pages/Box.qml \
+    qml/pages/Logic.js \
+    qml/pages/Util.js
 
 # to disable building translations every time, comment out the
 # following CONFIG line
