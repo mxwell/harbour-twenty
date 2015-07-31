@@ -154,8 +154,11 @@ Page {
                 }
                 box.unbind_all()
                 boxes[r][c].unbind_all()
-                box.destroy()
-                boxes[r][c].evolve()
+                box.set_to_destroy(function() {
+                    boxes[r][c].evolve()
+                    gravitate()
+                })
+                //boxes[r][c].evolve()
                 return false
             }
             boxes[r][c] = box
@@ -459,10 +462,14 @@ Page {
         }
 
 
+        property bool gravitate_in_use: false
         /* Search at each step for boxes, that should fall at least 1 level down
          * and drop them 1 unit down exactly */
         // TODO care for floating boxes
-        function gravitate() {            
+        function gravitate() {
+            if (gravitate_in_use)
+                return
+            gravitate_in_use = true
             /* boxes falling at this step */
             var fgroup
             do {
@@ -506,6 +513,7 @@ Page {
                     align_with_grid(box, box.row + 1, box.column)
                 }
             } while (fgroup.length > 0);
+            gravitate_in_use = false
         }
 
         function complete() {

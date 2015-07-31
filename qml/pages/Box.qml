@@ -1,8 +1,10 @@
 import QtQuick 2.1
+import QtQuick.Particles 2.0
 import Sailfish.Silica 1.0
 import "./Logic.js" as Logic
 
 Rectangle {
+    id: root
     property int digit
     // user-faced X coordinate of the topleft corner
     property double pos_x
@@ -20,6 +22,8 @@ Rectangle {
     // saved from GameArea
     property int box_spacing
     property var saved_neighbor
+    property bool to_be_destroyed: false
+    property var destroy_callback
 
     function set_digit(d) {
         digit = d
@@ -29,6 +33,7 @@ Rectangle {
     }
 
     function evolve() {
+        make_smoke()
         set_digit(digit + 1)
     }
 
@@ -83,6 +88,25 @@ Rectangle {
             unbind(dir, true)
     }
 
+    function set_to_destroy(callback) {
+        destroy_callback = callback
+        if (!y_animation.running && !smoke_timer.running)
+            self_destroy()
+        else
+            to_be_destroyed = true
+    }
+
+    function make_smoke() {
+        smoke.enabled = true
+        smoke_timer.start()
+    }
+
+    function self_destroy() {
+        to_be_destroyed = false
+        destroy_callback()
+        root.destroy()
+    }
+
     height: width
     color: "transparent"
 
@@ -102,6 +126,65 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             font.pixelSize: height * 7 / 10
             font.bold: true
+        }
+
+        property int smoke_life: 500
+
+        ParticleSystem {
+            anchors.fill: parent
+
+            Turbulence {
+                id: turb
+                enabled: true
+                anchors.fill: parent
+                strength: 100
+                NumberAnimation on strength {
+                    from: 100
+                    to: 32
+                    easing.type: Easing.Linear
+                    duration: body.smoke_life
+                }
+            }
+
+            ImageParticle {
+                groups: ["smoke"]
+                source: "qrc:///img/particle-brick.png"
+                //color: "#11111111"
+                colorVariation: 0.7
+            }
+
+            Emitter {
+                id: smoke
+                group: "smoke"
+                enabled: false
+                x: body.width / 2
+                y: body.height
+
+                emitRate: 200
+                lifeSpan: body.smoke_life
+                lifeSpanVariation: 50
+                size: 32
+                endSize: -1
+                sizeVariation: 8
+                acceleration: PointDirection { y: 180 }
+                velocity: AngleDirection {
+                    angle: 270
+                    magnitude: 120
+                    angleVariation: 15
+                    magnitudeVariation: 5
+                }
+            }
+
+            Timer {
+                id: smoke_timer
+                interval: body.smoke_life
+                running: false
+                onTriggered: {
+                    smoke.enabled = false
+                    if (root.to_be_destroyed)
+                        self_destroy()
+                }
+            }
         }
     }
 
@@ -125,6 +208,17 @@ Rectangle {
         color: "black"
     }
 
-    Behavior on y { NumberAnimation { duration: 50; easing.type: Easing.Linear } }
-    Behavior on x { NumberAnimation { duration: 50; easing.type: Easing.Linear } }
+    Behavior on y {
+        NumberAnimation {
+            id: y_animation
+            duration: 100
+            easing.type: Easing.OutQuad
+
+            onRunningChanged: {
+                if (!running && root.to_be_destroyed)
+                    self_destroy()
+            }
+        }
+    }
+    Behavior on x { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
 }
