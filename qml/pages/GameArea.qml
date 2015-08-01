@@ -44,25 +44,73 @@ Page {
         id: flickable
         anchors { left: parent.left; right: parent.right }
         width: parent.width
-        height: 100
+        height: parent.height - parent.width * 8 / 7
 
         PullDownMenu {
             MenuItem {
-                text: qsTr("Some action")
+                text: qsTr("About")
+            }
+
+            MenuItem {
+                text: qsTr("Restart")
                 onClicked: {}
             }
         }
 
-        Row {
-            id: statusRow
-            anchors.fill: parent
+        Column {
+            width: parent.width
+            anchors {
+                bottomMargin: Theme.itemSizeSmall
+                bottom: parent.bottom
+            }
 
             Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                id: scoreLabel
                 text: qsTr("Score")
             }
 
-            Button {
-                text: qsTr("Pause")
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                ProgressBar {
+                    id: progressBar
+                    width: flickable.width * 8 / 10
+                    value: 0
+                    maximumValue: 8 * 15
+                    Timer {
+                        id: spawn_timer
+                        interval: 125
+                        repeat: true
+                        onTriggered: {
+                            var value = progressBar.value + 1
+                            if (value === progressBar.maximumValue) {
+                                value = 0
+                                if (!game.spawn()) {
+                                    spawn_timer.stop()
+                                    pause.visible = false
+                                    return
+                                }
+                            }
+                            progressBar.value = value
+                        }
+                        running: false
+                    }
+                }
+
+                IconButton {
+                    id: pause
+                    icon.source: "image://theme/icon-l-pause"
+                    onClicked: {
+                        if (spawn_timer.running) {
+                            spawn_timer.stop()
+                            icon.source = "image://theme/icon-l-play"
+                        } else {
+                            spawn_timer.start()
+                            icon.source = "image://theme/icon-l-pause"
+                        }
+                    }
+                }
             }
         }
     }
@@ -102,9 +150,9 @@ Page {
             Component.onCompleted: {
                 game.box_component = Qt.createComponent("Box.qml")
                 game.layout()
+                spawn_timer.start()
             }
         }
-
     }
 
     QtObject {
@@ -125,15 +173,15 @@ Page {
 
         property double kEps: 1e-6
 
-        function generate_digit(upper_digit) {
-            var digit
+        property int spawns: 0
+
+        function generate_number(right_bound, forbidden) {
             while (true) {
-                digit = Math.floor(1 + Math.random() * 9)
-                if (digit !== upper_digit) {
-                    break
+                var num = Math.min(Math.floor(1 + Math.random() * right_bound), 19)
+                if (num !== forbidden) {
+                    return num
                 }
             }
-            return digit
         }
 
         function unbind_from_grid(box) {
@@ -178,12 +226,12 @@ Page {
             for (var c = 0; c < kAreaColumns; ++c)
                 if (boxes[0][c] !== undefined)
                     return false
-            for (var r = 1; r < kAreaRows; ++r) {
+            for (var r = 1; r <= kAreaRows; ++r) {
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
                     if (box !== undefined) {
-                        box.set_y(grid_y(r - 1))
-                        bind_to_grid(box, r - 1, c)
+                        align_with_grid(box, r - 1, c)
+                        box.visible = true
                         boxes[r][c] = undefined
                     }
                 }
@@ -208,24 +256,37 @@ Page {
         }
 
         // init the lowest row
-        function add_row(hor_bind, ver_bind) {
-            var r = kAreaRows - 1
+        function add_row() {
+            var r = kAreaRows
             for (var c = 0; c < kAreaColumns; ++c) {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
-                var digit = generate_digit(upper)
-                var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
+                var digit = generate_number(Math.min(4 + spawns / 5, 19), upper)
+                var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing, visible: false })
                 b.set_digit(digit)
-                align_with_grid(b, r, c)
+                bind_to_grid(b, r, c)
+                //align_with_grid(b, r, c)
             }
-            if (hor_bind) {
-                boxes[r][0].bind(Logic.kRight, boxes[r][1])
-                boxes[r][1].bind(Logic.kLeft, boxes[r][0])
+            var binding_slots = kAreaColumns * 2 - 1
+            var max_bindings = Math.min(spawns / 6, binding_slots - 4)
+            var prob = max_bindings / binding_slots
+            var bindings = 0
+            // bind to the right
+            for (var c = 0; bindings < max_bindings && c + 1 < kAreaColumns; ++c) {
+                if (Math.random() < prob && boxes[r][c].digit !== boxes[r][c + 1].digit) {
+                    ++bindings
+                    boxes[r][c].bind(Logic.kRight, boxes[r][c + 1])
+                    boxes[r][c + 1].bind(Logic.kLeft, boxes[r][c])
+                }
             }
-            if (ver_bind) {
-                boxes[r][0].bind(Logic.kTop, boxes[r - 1][0])
-                boxes[r - 1][0].bind(Logic.kBottom, boxes[r][0])
+            // bind to the top
+            for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
+                if (Math.random() < prob && boxes[r][c].digit !== boxes[r - 1][c].digit) {
+                    ++bindings
+                    boxes[r][c].bind(Logic.kTop, boxes[r - 1][c])
+                    boxer[r - 1][c].bind(Logic.kBottom, boxes[r][c])
+                }
             }
         }
 
@@ -548,11 +609,18 @@ Page {
                     }
         }
 
+        function spawn() {
+            add_row()
+            var result = lift_boxes()
+            gravitate()
+            return result
+        }
+
         function layout() {
             if (typeof boxes !== 'undefined') {
                 destroy_boxes()
             }
-            boxes = Util.make_2d_array(kAreaRows, kAreaColumns)
+            boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             used = Util.make_2d_array(kAreaRows, kAreaColumns)
 
             var hsize = table.width / kAreaColumns
@@ -562,35 +630,9 @@ Page {
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
 
-            add_row(true, false)
-            lift_boxes()
-            add_row(false, true)
-            lift_boxes()
-            add_row(false, false)
-            //test_1()
-            //test_2()
-        }
-
-        function test_1() {
-            console.log("prepare test 1..")
-            console.log("box spacing " + box_spacing + ", box size " + box_size)
-            picked_box = {pos_x: grid_x(0), pos_y: grid_y(5)}
-            move_to(grid_x(0) + box_size / 2.0, grid_y(6) + box_size / 2.0)
-            console.log("[1] box now at " + picked_box.pos_x + "," + picked_box.pos_y)
-            move_to(grid_x(0) + box_size / 2.0, grid_y(4) + box_size / 2.0)
-            console.log("[2] box now at " + picked_box.pos_x + "," + picked_box.pos_y)
-            picked_box = undefined
-        }
-
-        function test_2() {
-            console.log("prepare test 2..")
-            var half = box_size / 2.0
-            select(grid_x(1) + half, grid_y(6) + half)
-            move_to(grid_x(2) + half, grid_y(5) + half)
-            console.log("[3] box now at " + picked_box.pos_x + "," + picked_box.pos_y)
-            move_to(grid_x(1) + half, grid_y(5) + half)
-            console.log("[4] box now at " + picked_box.pos_x + "," + picked_box.pos_y)
-            complete()
+            spawns = 0
+            spawn()
+            spawn()
         }
     }
 }
