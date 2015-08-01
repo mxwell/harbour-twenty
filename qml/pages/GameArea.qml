@@ -262,7 +262,7 @@ Page {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
-                var digit = generate_number(Math.min(40 + spawns / 5, 19), upper)
+                var digit = generate_number(Math.min(4 + spawns / 5, 19), upper)
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing, visible: false })
                 b.set_digit(digit)
                 bind_to_grid(b, r, c)
