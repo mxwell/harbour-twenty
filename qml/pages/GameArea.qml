@@ -315,10 +315,12 @@ Page {
             }
             // bind to the top
             for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
-                if (Math.random() < prob && boxes[r][c].digit !== boxes[r - 1][c].digit) {
+                var box = boxes[r][c]
+                var above = boxes[r - 1][c]
+                if (typeof above !== 'undefined' && box.digit !== above.digit && Math.random() < prob) {
                     ++bindings
-                    boxes[r][c].bind(Logic.kTop, boxes[r - 1][c])
-                    boxer[r - 1][c].bind(Logic.kBottom, boxes[r][c])
+                    box.bind(Logic.kTop, above)
+                    above.bind(Logic.kBottom, box)
                 }
             }
         }
