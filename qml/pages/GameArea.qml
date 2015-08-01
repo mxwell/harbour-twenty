@@ -40,6 +40,17 @@ Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
 
+    function restart_progress() {
+        spawn_timer.stop()
+        if (game.spawn()) {
+            progressBar.value = 0
+            spawn_timer.start()
+            pause.visible = true
+        } else {
+            pause.visible = false
+        }
+    }
+
     SilicaFlickable {
         id: flickable
         anchors { left: parent.left; right: parent.right }
@@ -149,7 +160,7 @@ Page {
 
             Component.onCompleted: {
                 game.box_component = Qt.createComponent("Box.qml")
-                game.layout()
+                game.layout(restart_progress)
                 spawn_timer.start()
             }
         }
@@ -161,6 +172,10 @@ Page {
         property var box_component
         property var boxes
         property var used
+
+        property var counts
+        property int not_single: 0
+        property var spawn_notify
 
         // box_size + box_spacing = box_total_size
         property int box_total_size
@@ -203,10 +218,9 @@ Page {
                 box.unbind_all()
                 boxes[r][c].unbind_all()
                 box.set_to_destroy(function() {
-                    boxes[r][c].evolve()
+                    increase_digit(boxes[r][c])
                     gravitate()
                 })
-                //boxes[r][c].evolve()
                 return false
             }
             boxes[r][c] = box
@@ -255,6 +269,26 @@ Page {
             return Math.floor((y - box_spacing) / box_total_size)
         }
 
+        function set_digit(b, digit) {
+            ++counts[digit]
+            if (counts[digit] === 2)
+                ++not_single
+            b.set_digit(digit)
+        }
+
+        function increase_digit(b) {
+            counts[b.digit] -= 2
+            if (counts[b.digit] === 0 || counts[b.digit] === 1)
+                --not_single
+            var new_digit = b.digit + 1
+            ++counts[new_digit]
+            if (counts[new_digit] === 2)
+                ++not_single
+            if (not_single < 1)
+                spawn_notify()
+            b.evolve()
+        }
+
         // init the lowest row
         function add_row() {
             var r = kAreaRows
@@ -262,9 +296,8 @@ Page {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
-                var digit = generate_number(Math.min(4 + spawns / 5, 19), upper)
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing, visible: false })
-                b.set_digit(digit)
+                set_digit(b, generate_number(Math.min(4 + spawns / 5, 19), upper))
                 bind_to_grid(b, r, c)
                 //align_with_grid(b, r, c)
             }
@@ -599,12 +632,14 @@ Page {
             return result
         }
 
-        function layout() {
+        function layout(spawn_notifier) {
             if (typeof boxes !== 'undefined') {
                 destroy_boxes()
             }
             boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             used = Util.make_2d_array(kAreaRows, kAreaColumns)
+            counts = Util.make_filled_array(21, 0)
+            not_single = 0
 
             var hsize = table.width / kAreaColumns
             var vsize = table.height / kAreaRows
@@ -613,6 +648,7 @@ Page {
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
 
+            spawn_notify = spawn_notifier
             spawns = 0
             spawn()
             spawn()

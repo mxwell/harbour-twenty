@@ -10,6 +10,13 @@ function condense_array(ar) {
     ar.splice(j, n - j);
 }
 
+function make_filled_array(n, filler) {
+    var result = new Array(n);
+    for (var i = 0; i < n; ++i)
+        result[i] = filler;
+    return result
+}
+
 function make_2d_array(rows, columns) {
     var result = new Array(rows);
     for (var i = 0; i < rows; ++i)
