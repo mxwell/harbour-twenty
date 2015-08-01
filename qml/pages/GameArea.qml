@@ -627,6 +627,7 @@ Page {
 
         function spawn() {
             add_row()
+            ++spawns
             var result = lift_boxes()
             gravitate()
             return result
