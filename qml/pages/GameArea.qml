@@ -336,10 +336,6 @@ Page {
                 pgroup[i].floating = true
         }
 
-        function make_point(x, y) {
-            return { x: x, y: y }
-        }
-
         function center_of_box(box) {
             return { x: box.pos_x + box_half_size, y: box.pos_y + box_half_size }
         }
@@ -348,59 +344,46 @@ Page {
             return { pos_x: center.x - box_half_size, pos_y: center.y - box_half_size }
         }
 
-        function point_sum(a, b) {
-            return make_point(a.x + b.x, a.y + b.y)
-        }
-
-        function point_diff(a, b) {
-            return make_point(a.x - b.x, a.y - b.y)
-        }
-
         function cell_is_free(row, column) {
             return 0 <= row && row < kAreaRows &&
                    0 <= column && column < kAreaColumns &&
                    (typeof boxes[row][column] === 'undefined' || boxes[row][column].floating)
         }
 
+        function move_too_small(move) {
+            return Math.abs(move.x) < kEps && Math.abs(move.y) < kEps
+        }
+
         function move_to(x, y) {
             if (pgroup.length === 0)
                 return
             //console.log("move to " + Math.floor(x) + "," + Math.floor(y))
-            var target = make_point(x, y)
+            var target = Util.make_point(x, y)
             var step_limit = box_half_size - kEps
 
             while (pgroup.length > 0) {
                 var center = center_of_box(pgroup[0])
                 // 1. Move a little
-                var move = point_diff(target, center)
-                var moving = false
-                if (Math.abs(move.x) > kEps) {
-                    moving = true
-                    if (Math.abs(move.x) > step_limit) {
-                        var t = Math.abs(move.x / step_limit)
-                        move.x /= t
-                        move.y /= t
-                    }
-                }
-                if (Math.abs(move.y) > kEps) {
-                    moving = true
-                    if (Math.abs(move.y) > step_limit) {
-                        var t = Math.abs(move.y / step_limit)
-                        move.x /= t
-                        move.y /= t
-                    }
-                }
-                // Target reached
-                if (!moving)
+                var move = Util.point_diff(target, center)
+
+                // Stop if target is reached
+                if (move_too_small(move))
                     break
+
+                // Confine a single movement
+                var t = Math.max(Math.abs(move.x / step_limit), Math.abs(move.y / step_limit))
+                if (t > 1) {
+                    move.x /= t
+                    move.y /= t
+                }
 
                 // 2. Check for collision with walls and push out
                 for (var i in pgroup) {
                     var cur_center = center_of_box(pgroup[i])
-                    var cur_next = point_sum(cur_center, move)
+                    var cur_next = Util.point_sum(cur_center, move)
                     cur_next.x = Math.min(Math.max(cur_next.x, box_half_size + kEps), table.width - kEps - box_half_size)
                     cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps), table.height - kEps - box_half_size)
-                    move = point_diff(cur_next, cur_center)
+                    move = Util.point_diff(cur_next, cur_center)
                 }
 
                 // 3. Find bounding cells ranges
@@ -408,7 +391,7 @@ Page {
                 var top_row = kAreaRows - 1, bottom_row = 0
                 for (var i in pgroup) {
                     var cur_center = center_of_box(pgroup[i])
-                    var cur_next = point_sum(cur_center, move)
+                    var cur_next = Util.point_sum(cur_center, move)
                     left_column = Math.min(left_column, x_to_column(cur_next.x - box_half_size))
                     right_column = Math.max(right_column, x_to_column(cur_next.x + box_half_size))
                     top_row = Math.min(top_row, y_to_row(cur_next.y - box_half_size))
@@ -426,13 +409,13 @@ Page {
                         if (typeof fixed === 'undefined' || fixed.floating)
                             continue
                         for (var i in pgroup) {
-                            var cur = make_point(pgroup[i].pos_x, pgroup[i].pos_y)
-                            var box = point_sum(cur, move)
+                            var cur = Util.make_point(pgroup[i].pos_x, pgroup[i].pos_y)
+                            var box = Util.point_sum(cur, move)
                             if (fixed.digit === pgroup[i].digit || !find_collision(fixed, box))
                                 continue
                             // find a direction with the smallest overlap
                             var overlap = 1e9
-                            var reverse = make_point(0, 0)
+                            var reverse = Util.make_point(0, 0)
                             if (move.x > kEps && cell_is_free(row, column - 1)) {
                                 var right = box.x + box_size
                                 var fixed_left = fixed.pos_x
@@ -472,12 +455,12 @@ Page {
                             if (overlap > 1e8)
                                 continue
                             //console.log("correction: " + Math.floor(reverse.x) + "," + Math.floor(reverse.y))
-                            move = point_sum(move, reverse)
+                            move = Util.point_sum(move, reverse)
                         }
                     }
                 }
-                // check if there is any effect
-                if (Math.abs(move.x) < kEps && Math.abs(move.y) < kEps)
+                // Check if there is any effect
+                if (move_too_small(move))
                     break
                 // Check if boxes are moved out of their current cells
                 var row_add = y_to_row(center.y + move.y) - y_to_row(center.y)

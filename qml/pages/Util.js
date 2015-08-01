@@ -22,3 +22,15 @@ function fill_2d_array(ar, value) {
         for (var j in ar[i])
             ar[i][j] = value;
 }
+
+function make_point(x, y) {
+    return { x: x, y: y }
+}
+
+function point_sum(a, b) {
+    return make_point(a.x + b.x, a.y + b.y)
+}
+
+function point_diff(a, b) {
+    return make_point(a.x - b.x, a.y - b.y)
+}
