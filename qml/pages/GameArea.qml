@@ -48,6 +48,7 @@ Page {
             pause.visible = true
         } else {
             pause.visible = false
+            touch.enabled = false
         }
     }
 
@@ -64,7 +65,7 @@ Page {
 
             MenuItem {
                 text: qsTr("Restart")
-                onClicked: {}
+                onClicked: table.init_game()
             }
         }
 
@@ -112,14 +113,24 @@ Page {
                 IconButton {
                     id: pause
                     icon.source: "image://theme/icon-l-pause"
+
+                    function toggle_view(playing) {
+                        if (playing)
+                            icon.source = "image://theme/icon-l-pause"
+                        else
+                            icon.source = "image://theme/icon-l-play"
+                        visible = true
+                    }
+
                     onClicked: {
                         if (spawn_timer.running) {
                             spawn_timer.stop()
-                            icon.source = "image://theme/icon-l-play"
+                            touch.enabled = false
                         } else {
                             spawn_timer.start()
-                            icon.source = "image://theme/icon-l-pause"
+                            touch.enabled = true
                         }
+                        toggle_view(spawn_timer.running)
                     }
                 }
             }
@@ -146,22 +157,31 @@ Page {
                 bottom: parent.bottom
                 bottomMargin: Theme.paddingLarge
             }
+            clip: true
             color: "#eff6bc"
             radius: height / 50
 
             height: 8 * width / 7
 
             MouseArea {
+                id: touch
+                enabled: false
                 anchors.fill: parent
                 onPressed: game.select(mouse.x, mouse.y)
                 onPositionChanged: game.move_to(mouse.x, mouse.y)
                 onReleased: game.complete()
             }
 
-            Component.onCompleted: {
-                game.box_component = Qt.createComponent("Box.qml")
+            function init_game() {
                 game.layout(restart_progress)
                 spawn_timer.start()
+                touch.enabled = true
+                pause.toggle_view(true)
+            }
+
+            Component.onCompleted: {
+                game.box_component = Qt.createComponent("Box.qml")
+                init_game()
             }
         }
     }
@@ -229,9 +249,9 @@ Page {
             return true
         }
 
-        function align_with_grid(box, r, c) {
+        function align_with_grid(box, r, c, speed) {
             bind_to_grid(box, r, c)
-            box.move_to(grid_x(c), grid_y(r))
+            box.move_to(grid_x(c), grid_y(r), speed)
         }
 
         // move existing rows up: return true if no boxes should be destroyed for the move,
@@ -244,7 +264,7 @@ Page {
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
                     if (box !== undefined) {
-                        align_with_grid(box, r - 1, c)
+                        align_with_grid(box, r - 1, c, 0)
                         box.visible = true
                         boxes[r][c] = undefined
                     }
@@ -296,10 +316,9 @@ Page {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
-                var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing, visible: false })
+                var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
                 set_digit(b, generate_number(Math.min(4 + spawns / 5, 19), upper))
-                bind_to_grid(b, r, c)
-                //align_with_grid(b, r, c)
+                align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
             var max_bindings = Math.min(spawns / 6, binding_slots - 4)
@@ -504,7 +523,7 @@ Page {
                 // Move the group
                 for (var i in pgroup) {
                     var box = pgroup[i]
-                    box.move_with_vector(move)
+                    box.move_with_vector(move, 1)
                     if (move_in_grid)
                         unbind_from_grid(box)
                 }
@@ -589,7 +608,7 @@ Page {
                 // and bind them lower
                 for (var i in fgroup) {
                     var box = fgroup[i]
-                    align_with_grid(box, box.row + 1, box.column)
+                    align_with_grid(box, box.row + 1, box.column, 0)
                 }
             } while (fgroup.length > 0);
             gravitate_in_use = false
@@ -604,7 +623,7 @@ Page {
                 var box = pgroup[i]
                 if (typeof box === 'undefined')
                     continue
-                box.move_to(grid_x(box.column), grid_y(box.row))
+                box.move_to(grid_x(box.column), grid_y(box.row), 0)
                 box.floating = false
             }
             pgroup = []

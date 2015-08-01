@@ -37,23 +37,32 @@ Rectangle {
         set_digit(digit + 1)
     }
 
-    function move_to(tx, ty) {
+    function set_position(tx, ty) {
         pos_x = tx
         pos_y = ty
         x = pos_x
         y = pos_y
     }
 
-    function move_with_vector(v) {
-        pos_x += v.x
-        pos_y += v.y
-        x = pos_x
-        y = pos_y
+    /* 0 - slow, 1 - middle, 2 - instantaneous */
+    function move_to(tx, ty, speed) {
+        var duration = 0
+        if (speed < 2) {
+            var dx = tx - pos_x
+            var dy = ty - pos_y
+            var dist = Math.sqrt(dx * dx + dy * dy)
+            if (speed === 0)
+                duration = dist * 2.5
+            else
+                duration = dist * 1.5
+        }
+        y_animation.duration = duration
+        x_animation.duration = duration
+        set_position(tx, ty)
     }
 
-    function set_y(ty) {
-        pos_y = ty
-        y = pos_y
+    function move_with_vector(v, speed) {
+        move_to(pos_x + v.x, pos_y + v.y, speed)
     }
 
     function set_cell(r, c) {
@@ -128,7 +137,7 @@ Rectangle {
             font.bold: true
         }
 
-        property int smoke_life: 500
+        property int smoke_life: 250
 
         ParticleSystem {
             anchors.fill: parent
@@ -220,5 +229,11 @@ Rectangle {
             }
         }
     }
-    Behavior on x { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
+    Behavior on x {
+        NumberAnimation {
+            id: x_animation
+            duration: 100
+            easing.type: Easing.OutQuad
+        }
+    }
 }
