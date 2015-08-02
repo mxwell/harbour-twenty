@@ -26,15 +26,15 @@
 <context>
     <name>GameArea</name>
     <message>
-        <source>Score</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>About</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Restart</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Score</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

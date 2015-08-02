@@ -41,3 +41,17 @@ function point_sum(a, b) {
 function point_diff(a, b) {
     return make_point(a.x - b.x, a.y - b.y)
 }
+
+// @a and @b are squares with side=@size, represented by topleft points
+function find_collision(a, b, size) {
+    return a.x < b.x + size && a.x + size > b.x && a.y < b.y + size && a.y + size > b.y
+}
+
+function generate_number(right_bound, forbidden) {
+    while (true) {
+        var num = Math.min(Math.floor(1 + Math.random() * right_bound), 19)
+        if (num !== forbidden) {
+            return num
+        }
+    }
+}

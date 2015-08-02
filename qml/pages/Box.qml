@@ -2,26 +2,35 @@ import QtQuick 2.1
 import QtQuick.Particles 2.0
 import Sailfish.Silica 1.0
 import "./Logic.js" as Logic
+import "./Util.js" as Util
 
 Rectangle {
     id: root
     property int digit
-    // user-faced X coordinate of the topleft corner
+
+    // difference of the physical and virtual y-coordinate
+    property double phys_virt_diff: 0
+
+    // "physical" coordinates of the top left corner
     property double pos_x
-    // user-faced Y coordinate of the topleft corner
     property double pos_y
-    // row of the occupied cell in the grid
+
+    // row and column of the occupied cell in the grid
     property int row
-    // column of the occupied cell in the grid
     property int column
-    // flag for box not bound to the grid
+
+    // flag of a box picked by a user touch
     property bool floating: false
+
     // bindings to adjacent boxes: relative position
     // of the neighbor is specified by Logic.adjacent_dr and Logic.adjacent_dc
     property var adjacent: [undefined, undefined, undefined, undefined]
+
     // saved from GameArea
     property int box_spacing
     property var saved_neighbor
+
+    // for a nice destruction
     property bool to_be_destroyed: false
     property var destroy_callback
 
@@ -35,6 +44,21 @@ Rectangle {
     function evolve() {
         make_smoke()
         set_digit(digit + 1)
+    }
+
+    function get_virtual() {
+        return Util.make_point(pos_x, pos_y - phys_virt_diff)
+    }
+
+    function set_phys_virt_diff(diff, speed) {
+        var change = diff - phys_virt_diff
+        move_to(pos_x, pos_y + change, speed)
+        phys_virt_diff = diff
+    }
+
+    // nullify difference, but don't move box
+    function relax_diff() {
+        phys_virt_diff = 0
     }
 
     function set_position(tx, ty) {
@@ -52,13 +76,19 @@ Rectangle {
             var dy = ty - pos_y
             var dist = Math.sqrt(dx * dx + dy * dy)
             if (speed === 0)
-                duration = dist * 2.5
+                duration = dist * 3
             else
-                duration = dist * 1.5
+                duration= dist * 1.5
         }
+        //console.log("duration " + dur + ", speed " + speed + ", tx " + tx + ", ty " + ty)
+
         y_animation.duration = duration
         x_animation.duration = duration
         set_position(tx, ty)
+    }
+
+    function virtual_move_to(tx, ty, speed) {
+        move_to(tx, ty + phys_virt_diff, speed)
     }
 
     function move_with_vector(v, speed) {

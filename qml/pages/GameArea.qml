@@ -40,16 +40,11 @@ Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
 
+    signal send_spawn()
+
     function restart_progress() {
         spawn_timer.stop()
-        if (game.spawn()) {
-            progressBar.value = 0
-            spawn_timer.start()
-            pause.visible = true
-        } else {
-            pause.visible = false
-            touch.enabled = false
-        }
+        send_spawn()
     }
 
     SilicaFlickable {
@@ -90,19 +85,32 @@ Page {
                     width: flickable.width * 8 / 10
                     value: 0
                     maximumValue: 8 * 15
+
+                    signal send()
+
+                    function spawn_finish(result) {
+                        console.log("spawn finished")
+                        value = 0
+                        spawn_timer.restart()
+                    }
+
+                    function spawn_fail() {
+                        console.log("spawn failed")
+                        pause.visible = false
+                        touch.enabled = false
+                    }
+
                     Timer {
                         id: spawn_timer
                         interval: 125
-                        repeat: true
+                        repeat: false
                         onTriggered: {
                             var value = progressBar.value + 1
                             if (value === progressBar.maximumValue) {
                                 value = 0
-                                if (!game.spawn()) {
-                                    spawn_timer.stop()
-                                    pause.visible = false
-                                    return
-                                }
+                                send_spawn()
+                            } else {
+                                restart()
                             }
                             progressBar.value = value
                         }
@@ -167,21 +175,39 @@ Page {
                 id: touch
                 enabled: false
                 anchors.fill: parent
-                onPressed: game.select(mouse.x, mouse.y)
-                onPositionChanged: game.move_to(mouse.x, mouse.y)
-                onReleased: game.complete()
             }
 
             function init_game() {
-                game.layout(restart_progress)
+                game.layout()
+                progressBar.value = 0
                 spawn_timer.start()
                 touch.enabled = true
                 pause.toggle_view(true)
             }
 
             Component.onCompleted: {
+                touch.onPressed.connect(game.touch_start)
+                touch.onPositionChanged.connect(game.touch_move)
+                touch.onReleased.connect(game.touch_release)
+                root.send_spawn.connect(game.spawn)
+                game.send_gravitate.connect(game.gravitate)
+                game.send_ready_to_spawn.connect(restart_progress)
+                game.send_spawn_end.connect(progressBar.spawn_finish)
+                game.send_spawn_fail.connect(progressBar.spawn_fail)
+
                 game.box_component = Qt.createComponent("Box.qml")
                 init_game()
+            }
+        }
+
+        Timer {
+            id: testTimer
+            repeat: false
+            interval: 100
+            running: false
+            triggeredOnStart: true
+            onTriggered: {
+                console.log("trigger")
             }
         }
     }
@@ -195,28 +221,41 @@ Page {
 
         property var counts
         property int not_single: 0
-        property var spawn_notify
 
         // box_size + box_spacing = box_total_size
         property int box_total_size
         property int box_size
         property int box_half_size
         property int box_spacing
+        property double lift_offset: 0
 
         // group of picked boxes: it contains the boxes themselves
         property var pgroup: []
+        property double touch_x
+        property double touch_y
 
         property double kEps: 1e-6
 
         property int spawns: 0
 
-        function generate_number(right_bound, forbidden) {
-            while (true) {
-                var num = Math.min(Math.floor(1 + Math.random() * right_bound), 19)
-                if (num !== forbidden) {
-                    return num
-                }
+        signal send_gravitate()
+        signal send_ready_to_spawn()
+        signal send_spawn_end()
+        signal send_spawn_fail()
+
+        property string lock_owner: ""
+        property bool taken: false
+
+        function get_lock(name) {
+            if (taken) {
+                console.log("lock is taken by " + lock_owner + " before " + name)
             }
+            taken = true
+            lock_owner = name
+        }
+
+        function release_lock() {
+            taken = false
         }
 
         function unbind_from_grid(box) {
@@ -237,9 +276,10 @@ Page {
                 }
                 box.unbind_all()
                 boxes[r][c].unbind_all()
+                var saved = boxes[r][c]
                 box.set_to_destroy(function() {
-                    increase_digit(boxes[r][c])
-                    gravitate()
+                    increase_digit(saved)
+                    send_gravitate()
                 })
                 return false
             }
@@ -251,28 +291,65 @@ Page {
 
         function align_with_grid(box, r, c, speed) {
             bind_to_grid(box, r, c)
-            box.move_to(grid_x(c), grid_y(r), speed)
+            box.virtual_move_to(grid_x(c), grid_y(r), speed)
         }
 
         // move existing rows up: return true if no boxes should be destroyed for the move,
         //  otherwise return false and don't move
         function lift_boxes() {
-            for (var c = 0; c < kAreaColumns; ++c)
-                if (boxes[0][c] !== undefined)
-                    return false
+            get_lock("lift-1")
+            var step = box_total_size / 5.0
+            var rungs = []
+            for (var i = 0; i < 4; ++i)
+                rungs.push(step)
+            rungs.push(box_total_size - 4 * step)
+
+            var ok = true
+            lift_offset = 0
+            for (var ik in rungs) {
+                lift_offset += rungs[ik]
+                //console.log("lift offset: " + lift_offset)
+                for (var r = 0; r <= kAreaRows; ++r) {
+                    for (var c = 0; c < kAreaColumns; ++c) {
+                        var box = boxes[r][c]
+                        if (typeof box === 'undefined')
+                            continue
+                        box.set_phys_virt_diff(-lift_offset, 0)
+                        if (box.pos_y < kEps) {
+                            console.log("box " + box.digit + " is out of the table")
+                            ok = false
+                        }
+                    }
+                }
+                if (!ok) {
+                    send_spawn_fail()
+                    return
+                }
+                if (pgroup.length > 0) {
+                    release_lock()
+                    move_to(touch_x, touch_y + lift_offset)
+                    get_lock("lift-2")
+                }
+            }
             for (var r = 1; r <= kAreaRows; ++r) {
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
-                    if (box !== undefined) {
-                        align_with_grid(box, r - 1, c, 0)
-                        box.visible = true
-                        boxes[r][c] = undefined
-                    }
+                    if (typeof box === 'undefined')
+                        continue
+                    //align_with_grid(box, r - 1, c, 2)
+                    bind_to_grid(box, r - 1, c)
+                    box.relax_diff()
+                    boxes[r][c] = undefined
                 }
             }
-            return true
+            lift_offset = 0
+            ++spawns
+            release_lock()
+            send_gravitate()
+            send_spawn_end()
         }
 
+        // TODO refactor: merge two funcs into one
         function grid_x(c) {
             return box_spacing + box_total_size * c
         }
@@ -305,23 +382,24 @@ Page {
             if (counts[new_digit] === 2)
                 ++not_single
             if (not_single < 1)
-                spawn_notify()
+                send_ready_to_spawn()
             b.evolve()
         }
 
         // init the lowest row
         function add_row() {
+            get_lock("add-row")
             var r = kAreaRows
             for (var c = 0; c < kAreaColumns; ++c) {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].digit
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
-                set_digit(b, generate_number(Math.min(4 + spawns / 5, 19), upper))
+                set_digit(b, Util.generate_number(Math.min(4 + spawns / 5, 19), upper))
                 align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
-            var max_bindings = Math.min(spawns / 6, binding_slots - 4)
+            var max_bindings = Math.min(spawns / 2, binding_slots - 4)
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
@@ -336,12 +414,27 @@ Page {
             for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
                 var box = boxes[r][c]
                 var above = boxes[r - 1][c]
-                if (typeof above !== 'undefined' && box.digit !== above.digit && Math.random() < prob) {
+                if (typeof above !== 'undefined' && box.digit !== above.digit && !above.floating && !above.to_be_destroyed && Math.random() < prob) {
                     ++bindings
                     box.bind(Logic.kTop, above)
                     above.bind(Logic.kBottom, box)
                 }
             }
+            release_lock()
+        }
+
+        function spawn() {
+            add_row()
+            /*
+            var tt = 1000 * 1000 * 1000
+            var ss = 0
+            console.log("waiting")
+            for (var i = 0; i < tt; ++i)
+                ss += i * (i - 1)
+            */
+            console.log("lifting")
+            lift_boxes()
+            console.log("lifted")
         }
 
         // return array with all boxes connected to @picked
@@ -370,28 +463,46 @@ Page {
             return queue
         }
 
+        function touch_start(mouse_event) {
+            //console.log("touch start: " + mouse_event.x + "," + mouse_event.y)
+            select(mouse_event.x, mouse_event.y + lift_offset)
+        }
+
+        // Coordinates are virtual
         function select(x, y) {
-            if (pgroup.length > 0)
+            if (pgroup.length > 0) {
                 return
+            }
+            get_lock("select")
+
             var column = x_to_column(x)
+            // TODO virtual y?
             var row = y_to_row(y)
             if (0 > column || column >= kAreaColumns
-                  || 0 > row && row >= kAreaRows)
+                  || 0 > row && row >= kAreaRows) {
+                release_lock()
                 return
+            }
             var picked = boxes[row][column]
-            if (typeof picked === 'undefined')
+            if (typeof picked === 'undefined') {
+                release_lock()
                 return
+            }
             // TODO implement "catching"
-            if (picked.floating)
+            if (picked.floating) {
+                release_lock()
                 return
+            }
             Util.fill_2d_array(used, false)
             pgroup = bfs(picked)
             for (var i in pgroup)
                 pgroup[i].floating = true
+            release_lock()
         }
 
         function center_of_box(box) {
-            return { x: box.pos_x + box_half_size, y: box.pos_y + box_half_size }
+            var top_left = box.get_virtual()
+            return Util.make_point(top_left.x + box_half_size, top_left.y + box_half_size)
         }
 
         function make_box(center) {
@@ -408,10 +519,22 @@ Page {
             return Math.abs(move.x) < kEps && Math.abs(move.y) < kEps
         }
 
+        function touch_move(mouse_event) {
+            //console.log("touch move: " + mouse_event.x + "," + mouse_event.y)
+            touch_x = mouse_event.x
+            touch_y = mouse_event.y
+            move_to(mouse_event.x, mouse_event.y + lift_offset)
+        }
+
+        /* 1. Works with virtual coordinates
+         * 2. Lock should be taken in advance
+         */
         function move_to(x, y) {
-            if (pgroup.length === 0)
+            if (pgroup.length === 0) {
                 return
-            //console.log("move to " + Math.floor(x) + "," + Math.floor(y))
+            }
+            get_lock("move-1")
+            //console.log("move: start, to row " + y_to_row(y))
             var target = Util.make_point(x, y)
             var step_limit = box_half_size - kEps
 
@@ -462,17 +585,18 @@ Page {
                         var fixed = boxes[row][column]
                         if (typeof fixed === 'undefined' || fixed.floating)
                             continue
+                        var top_left = fixed.get_virtual()
                         for (var i in pgroup) {
-                            var cur = Util.make_point(pgroup[i].pos_x, pgroup[i].pos_y)
+                            var cur = pgroup[i].get_virtual()
                             var box = Util.point_sum(cur, move)
-                            if (fixed.digit === pgroup[i].digit || !find_collision(fixed, box))
+                            if (fixed.digit === pgroup[i].digit || !Util.find_collision(top_left, box, box_size))
                                 continue
                             // find a direction with the smallest overlap
                             var overlap = 1e9
                             var reverse = Util.make_point(0, 0)
                             if (move.x > kEps && cell_is_free(row, column - 1)) {
                                 var right = box.x + box_size
-                                var fixed_left = fixed.pos_x
+                                var fixed_left = top_left.x
                                 var o = right - fixed_left
                                 if (0 < o && o < box_size) {
                                     overlap = right - fixed_left
@@ -480,7 +604,7 @@ Page {
                                 }
                             } else if (move.x < -kEps && cell_is_free(row, column + 1)) {
                                 var left = box.x
-                                var fixed_right = fixed.pos_x + box_size
+                                var fixed_right = top_left.x + box_size
                                 var o = fixed_right - left
                                 if (0 < o && o < box_size) {
                                     overlap = fixed_right - left
@@ -489,7 +613,7 @@ Page {
                             }
                             if (move.y > kEps && cell_is_free(row - 1, column)) {
                                 var bottom = box.y + box_size
-                                var fixed_top = fixed.pos_y
+                                var fixed_top = top_left.y
                                 var o = bottom - fixed_top
                                 if (0 < o && o < box_size && o < overlap) {
                                     overlap = bottom - fixed_top
@@ -498,7 +622,7 @@ Page {
                                 }
                             } else if (move.y < -kEps && cell_is_free(row + 1, column)) {
                                 var top = box.y
-                                var fixed_bottom = fixed.pos_y + box_size
+                                var fixed_bottom = top_left.y + box_size
                                 var o = fixed_bottom - top
                                 if (0 < o && o < box_size && o < overlap) {
                                     overlap = fixed_bottom - top
@@ -520,6 +644,7 @@ Page {
                 var row_add = y_to_row(center.y + move.y) - y_to_row(center.y)
                 var column_add = x_to_column(center.x + move.x) - x_to_column(center.x)
                 var move_in_grid = row_add !== 0 || column_add !== 0
+                //console.log("move: " + move.x + ", " + move.y)
                 // Move the group
                 for (var i in pgroup) {
                     var box = pgroup[i]
@@ -539,6 +664,7 @@ Page {
                         }
                     }
                     if (typeof pgroup[0] === 'undefined') {
+                        release_lock()
                         complete()
                         return
                     } else if (lost) {
@@ -553,21 +679,20 @@ Page {
                             pgroup[i].floating = true
                         }
                     }
+                    release_lock()
                     gravitate()
+                    get_lock("move-2")
                 }
-                //console.log("put into cell " + pgroup[0].row + "," + pgroup[0].column)
             }
+            release_lock()
         }
 
-
-        property bool gravitate_in_use: false
-        /* Search at each step for boxes, that should fall at least 1 level down
-         * and drop them 1 unit down exactly */
-        // TODO care for floating boxes
+        /* 1. Search at each step for boxes, that should fall at least 1 level down
+         * and drop them 1 unit down exactly.
+         * 2. Works with virtual coordinates.
+         */
         function gravitate() {
-            if (gravitate_in_use)
-                return
-            gravitate_in_use = true
+            get_lock("gravitate")
             /* boxes falling at this step */
             var fgroup
             do {
@@ -610,56 +735,52 @@ Page {
                     var box = fgroup[i]
                     align_with_grid(box, box.row + 1, box.column, 0)
                 }
-            } while (fgroup.length > 0);
-            gravitate_in_use = false
+            } while (fgroup.length > 0)
+            release_lock()
         }
 
+        function touch_release() {
+            //console.log("touch release")
+            complete()
+        }
+
+        /* 1. Works with virtual coordinates
+         * 2. Lock should be taken in advance
+         */
         function complete() {
-            if (pgroup.length === 0)
+            if (pgroup.length === 0) {
                 return
-            //console.log("releasing")
+            }
+            get_lock("complete")
             // relax group
             for (var i in pgroup) {
                 var box = pgroup[i]
                 if (typeof box === 'undefined')
                     continue
-                box.move_to(grid_x(box.column), grid_y(box.row), 0)
+                box.virtual_move_to(grid_x(box.column), grid_y(box.row), 0)
                 box.floating = false
             }
             pgroup = []
+            release_lock()
             // drop all
             gravitate()
         }
 
-        // @a is a normal box object, @p is a box, represented by a topleft point
-        function find_collision(a, p) {
-            return a.pos_x < p.x + box_size && a.pos_x + box_size > p.x &&
-                    a.pos_y < p.y + box_size && a.pos_y + box_size > p.y
-        }
-
-        function destroy_boxes() {
-            for (var r in boxes)
-                for (var c in boxes[r])
-                    if (typeof boxes[r][c] !== 'undefined') {
-                        boxes[r][c].destroy()
-                        boxes[r][c] = undefined
-                    }
-        }
-
-        function spawn() {
-            add_row()
-            ++spawns
-            var result = lift_boxes()
-            gravitate()
-            return result
-        }
-
-        function layout(spawn_notifier) {
+        function layout() {
+            // destroy all previously existing boxes
             if (typeof boxes !== 'undefined') {
-                destroy_boxes()
+                for (var r = 0; r <= kAreaRows; ++r) {
+                    for (var c = 0; c < kAreaColumns; ++c) {
+                        if (typeof boxes[r][c] !== 'undefined') {
+                            boxes[r][c].destroy()
+                            boxes[r][c] = undefined
+                        }
+                    }
+                }
             }
+
             boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
-            used = Util.make_2d_array(kAreaRows, kAreaColumns)
+            used = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             counts = Util.make_filled_array(21, 0)
             not_single = 0
 
@@ -669,8 +790,8 @@ Page {
             box_spacing = box_total_size / 10
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
+            lift_offset = 0
 
-            spawn_notify = spawn_notifier
             spawns = 0
             spawn()
             spawn()
