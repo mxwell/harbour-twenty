@@ -328,13 +328,10 @@ Page {
                 boxes[r][c].unbind_all()
                 var saved = boxes[r][c]
                 saved.set_to_evolve()
-                // TODO change digit immediately, but visualize with delay
 
                 box.set_to_destroy(function() {
                     if (typeof saved !== 'undefined') {
                         var prev_digit = saved.get_digit()
-                        console.log("evolving " + prev_digit)
-                        //if (typeof saved.evolve !== 'undefined')
                         saved.evolve()
                         increase_digit(prev_digit)
                     } else {
@@ -471,7 +468,7 @@ Page {
                 align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
-            var max_bindings = Math.min(spawns / 2, binding_slots - 4)
+            var max_bindings = Math.min(spawns / 6, binding_slots - 4)
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
@@ -680,7 +677,6 @@ Page {
                             }
                             if (overlap > 1e8)
                                 continue
-                            //console.log("correction: " + Math.floor(reverse.x) + "," + Math.floor(reverse.y))
                             move = Util.point_sum(move, reverse)
                         }
                     }
@@ -692,7 +688,6 @@ Page {
                 var row_add = coordinate_to_grid(center.y + move.y) - coordinate_to_grid(center.y)
                 var column_add = coordinate_to_grid(center.x + move.x) - coordinate_to_grid(center.x)
                 var move_in_grid = row_add !== 0 || column_add !== 0
-                //console.log("move: " + move.x + ", " + move.y)
                 // Move the group
                 for (var i in pgroup) {
                     var box = pgroup[i]
@@ -715,16 +710,18 @@ Page {
                         complete()
                         return
                     } else if (lost) {
+                        // get newly picked boxes
+                        Util.fill_2d_array(used, false)
+                        var updated_group = bfs(pgroup[0])
+                        // release the boxes of the difference
                         for (var i in pgroup) {
                             var b = pgroup[i]
-                            if (typeof b !== 'undefined')
+                            if (typeof b !== 'undefined' && updated_group.indexOf(b) === -1) {
+                                b.virtual_move_to(grid_line(b.column), grid_line(b.row), 0)
                                 b.floating = false
+                            }
                         }
-                        Util.fill_2d_array(used, false)
-                        pgroup = bfs(pgroup[0])
-                        for (var i in pgroup) {
-                            pgroup[i].floating = true
-                        }
+                        pgroup = updated_group
                     }
                     gravitate()
                 }

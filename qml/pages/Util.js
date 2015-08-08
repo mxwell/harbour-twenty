@@ -25,8 +25,8 @@ function make_2d_array(rows, columns) {
 }
 
 function fill_2d_array(ar, value) {
-    for (var i in ar)
-        for (var j in ar[i])
+    for (var i = 0; i < ar.length; ++i)
+        for (var j = 0; j < ar[i].length; ++j)
             ar[i][j] = value;
 }
 
