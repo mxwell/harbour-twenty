@@ -55,3 +55,47 @@ function generate_number(right_bound, forbidden) {
         }
     }
 }
+
+function queue_new() {
+    return {
+        front: 0,
+        end: 0,
+        items: new Array(128)
+    };
+}
+
+function queue_push(q, item) {
+    q.items[q.end] = item;
+    q.end = (q.end + 1) % q.items.length;
+    if (q.end === q.front) {
+        console.log("ERROR: queue overflow");
+       q.front = (q.front + 1) % q.items.length;
+    }
+}
+
+function queue_pop(q) {
+    if (q.front === q.end) {
+        console.log("ERROR: queue underflow");
+    }
+    var result = q.items[q.front];
+    q.front = (q.front + 1) % q.items.length;
+    return result;
+}
+
+function queue_empty(q) {
+    return q.front === q.end;
+}
+
+function make_task(name, body) {
+    return {
+        name: name,
+        body: body
+    };
+}
+
+function delay(duration) {
+    var result = 0;
+    for (var i = 0; i < duration; ++i)
+        result += i * (duration - i + 1);
+    return result;
+}

@@ -40,11 +40,9 @@ Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
 
-    signal send_spawn()
-
     function restart_progress() {
         spawn_timer.stop()
-        send_spawn()
+        game.start_lift()
     }
 
     SilicaFlickable {
@@ -108,7 +106,7 @@ Page {
                             var value = progressBar.value + 1
                             if (value === progressBar.maximumValue) {
                                 value = 0
-                                send_spawn()
+                                game.start_lift()
                             } else {
                                 restart()
                             }
@@ -123,9 +121,10 @@ Page {
                     icon.source: "image://theme/icon-l-pause"
 
                     function toggle_view(playing) {
-                        if (playing)
+                        if (playing) {
                             icon.source = "image://theme/icon-l-pause"
-                        else
+                            game.report_stat()
+                        } else
                             icon.source = "image://theme/icon-l-play"
                         visible = true
                     }
@@ -175,6 +174,9 @@ Page {
                 id: touch
                 enabled: false
                 anchors.fill: parent
+                onPressed: game.send_touch_select(mouse.x, mouse.y)
+                onPositionChanged: game.send_touch_move(mouse.x, mouse.y)
+                onReleased: game.send_touch_release()
             }
 
             function init_game() {
@@ -186,16 +188,14 @@ Page {
             }
 
             Component.onCompleted: {
-                touch.onPressed.connect(game.touch_start)
-                touch.onPositionChanged.connect(game.touch_move)
-                touch.onReleased.connect(game.touch_release)
-                root.send_spawn.connect(game.spawn)
-                game.send_gravitate.connect(game.gravitate)
                 game.send_ready_to_spawn.connect(restart_progress)
                 game.send_spawn_end.connect(progressBar.spawn_finish)
                 game.send_spawn_fail.connect(progressBar.spawn_fail)
 
                 game.box_component = Qt.createComponent("Box.qml")
+                // one-time action
+                game.init()
+
                 init_game()
             }
         }
@@ -227,7 +227,11 @@ Page {
         property int box_size
         property int box_half_size
         property int box_spacing
+
+        // lift vars
         property double lift_offset: 0
+        property var lift_rungs
+        property int lift_pos: 0
 
         // group of picked boxes: it contains the boxes themselves
         property var pgroup: []
@@ -236,26 +240,70 @@ Page {
 
         property double kEps: 1e-6
 
+
         property int spawns: 0
 
-        signal send_gravitate()
+        /* External signals */
         signal send_ready_to_spawn()
         signal send_spawn_end()
         signal send_spawn_fail()
 
-        property string lock_owner: ""
-        property bool taken: false
+        /*** Task queue ***/
+        property var task_queue
+        property bool idle: true
 
-        function get_lock(name) {
-            if (taken) {
-                console.log("lock is taken by " + lock_owner + " before " + name)
-            }
-            taken = true
-            lock_owner = name
+        /* signals to invoke if one wants to schedule some task */
+        signal send_gravitate()
+        signal send_scroll()
+        signal send_touch_select(double x, double y)
+        signal send_touch_move(double x, double y)
+        signal send_touch_release()
+
+        function init() {
+            game.send_gravitate.connect(add_task_gravitate)
+            game.send_scroll.connect(add_task_scroll)
+            game.send_touch_select.connect(add_task_select)
+            game.send_touch_move.connect(add_task_move)
+            game.send_touch_release.connect(add_task_release)
         }
 
-        function release_lock() {
-            taken = false
+        // add to task queue, and execute it immediately if idle
+        function run_or_schedule(task) {
+            Util.queue_push(task_queue, task)
+            if (!idle)
+                return
+            idle = false
+            while (!Util.queue_empty(task_queue)) {
+                var next = Util.queue_pop(task_queue)
+                next.body()
+            }
+            idle = true
+        }
+
+        function add_task_gravitate() {
+            run_or_schedule(Util.make_task("gravitate", gravitate))
+        }
+
+        function add_task_scroll() {
+            run_or_schedule(Util.make_task("scroll", lift_step))
+        }
+
+        // physical coordinates
+        function add_task_select(x, y) {
+            run_or_schedule(Util.make_task("select", function() {
+                touch_start(x, y)
+            }))
+        }
+
+        // physical coordinates
+        function add_task_move(x, y) {
+            run_or_schedule(Util.make_task("move", function() {
+                touch_move(x, y)
+            }))
+        }
+
+        function add_task_release() {
+            run_or_schedule(Util.make_task("release", complete))
         }
 
         function unbind_from_grid(box) {
@@ -266,19 +314,33 @@ Page {
         // return true if box is successfully bound, otherwise return false (= it was lost)
         function bind_to_grid(box, r, c) {
             if (typeof boxes[r][c] !== 'undefined') {
-                if (boxes[r][c].digit !== box.digit) {
-                    console.log("ERROR: losing box at " + r + "," + c)
+                if (boxes[r][c].get_digit() !== box.get_digit()) {
+                    console.log("ERROR: losing box at " + r + "," + c + ": replace " + boxes[r][c].get_digit() + " with " + box.get_digit())
                 } else if (boxes[r][c] === box) {
                     console.log("ERROR: the same")
                     return true
                 } else {
-                    console.log("merging boxes with digit " + box.digit)
+                    console.log("merging boxes with digit " + box.get_digit())
                 }
                 box.unbind_all()
+                rm_digit(box.get_digit())
+
                 boxes[r][c].unbind_all()
                 var saved = boxes[r][c]
+                saved.set_to_evolve()
+                // TODO change digit immediately, but visualize with delay
+
                 box.set_to_destroy(function() {
-                    increase_digit(saved)
+                    if (typeof saved !== 'undefined') {
+                        var prev_digit = saved.get_digit()
+                        console.log("evolving " + prev_digit)
+                        //if (typeof saved.evolve !== 'undefined')
+                        saved.evolve()
+                        increase_digit(prev_digit)
+                    } else {
+                        console.log("ERROR: saved box is lost")
+                    }
+
                     send_gravitate()
                 })
                 return false
@@ -291,79 +353,73 @@ Page {
 
         function align_with_grid(box, r, c, speed) {
             bind_to_grid(box, r, c)
-            box.virtual_move_to(grid_x(c), grid_y(r), speed)
+            box.virtual_move_to(grid_line(c), grid_line(r), speed)
+        }
+
+        function start_lift() {
+            add_row()
+            lift_offset = 0
+            lift_pos = 0
+            send_scroll()
         }
 
         // move existing rows up: return true if no boxes should be destroyed for the move,
         //  otherwise return false and don't move
-        function lift_boxes() {
-            get_lock("lift-1")
-            var step = box_total_size / 5.0
-            var rungs = []
-            for (var i = 0; i < 4; ++i)
-                rungs.push(step)
-            rungs.push(box_total_size - 4 * step)
-
+        function lift_step() {
             var ok = true
-            lift_offset = 0
-            for (var ik in rungs) {
-                lift_offset += rungs[ik]
-                //console.log("lift offset: " + lift_offset)
-                for (var r = 0; r <= kAreaRows; ++r) {
+            if (lift_pos >= lift_rungs.length) {
+                // finish the lifting
+                for (var r = 1; r <= kAreaRows; ++r) {
                     for (var c = 0; c < kAreaColumns; ++c) {
                         var box = boxes[r][c]
                         if (typeof box === 'undefined')
                             continue
-                        box.set_phys_virt_diff(-lift_offset, 0)
-                        if (box.pos_y < kEps) {
-                            console.log("box " + box.digit + " is out of the table")
-                            ok = false
-                        }
+                        //align_with_grid(box, r - 1, c, 2)
+                        bind_to_grid(box, r - 1, c)
+                        box.relax_diff()
+                        boxes[r][c] = undefined
                     }
                 }
-                if (!ok) {
-                    send_spawn_fail()
-                    return
-                }
-                if (pgroup.length > 0) {
-                    release_lock()
-                    move_to(touch_x, touch_y + lift_offset)
-                    get_lock("lift-2")
-                }
+                lift_offset = 0
+                lift_pos = 0
+                ++spawns
+                send_gravitate()
+                send_spawn_end()
+                return
             }
-            for (var r = 1; r <= kAreaRows; ++r) {
+
+            //console.log("lifting #" + lift_pos)
+            lift_offset += lift_rungs[lift_pos]
+            ++lift_pos
+            //console.log("lift offset: " + lift_offset)
+            for (var r = 0; r <= kAreaRows; ++r) {
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
                     if (typeof box === 'undefined')
                         continue
-                    //align_with_grid(box, r - 1, c, 2)
-                    bind_to_grid(box, r - 1, c)
-                    box.relax_diff()
-                    boxes[r][c] = undefined
+                    box.set_phys_virt_diff(-lift_offset, 0)
+                    if (box.pos_y < kEps) {
+                        console.log("box " + box.get_digit() + " is out of the table")
+                        ok = false
+                    }
                 }
             }
-            lift_offset = 0
-            ++spawns
-            release_lock()
-            send_gravitate()
-            send_spawn_end()
+            if (!ok) {
+                send_spawn_fail()
+                return
+            }
+            if (pgroup.length > 0)
+                send_touch_move(touch_x, touch_y)
+                //move_to(touch_x, touch_y + lift_offset)
+            send_scroll()
         }
 
-        // TODO refactor: merge two funcs into one
-        function grid_x(c) {
-            return box_spacing + box_total_size * c
+        function grid_line(line_id) {
+            return box_spacing + box_total_size * line_id
         }
 
-        function grid_y(r) {
-            return box_spacing + box_total_size * r
-        }
-
-        function x_to_column(x) {
+        function coordinate_to_grid(x) {
             return Math.floor((x - box_spacing) / box_total_size)
-        }
-
-        function y_to_row(y) {
-            return Math.floor((y - box_spacing) / box_total_size)
         }
 
         function set_digit(b, digit) {
@@ -373,27 +429,43 @@ Page {
             b.set_digit(digit)
         }
 
-        function increase_digit(b) {
-            counts[b.digit] -= 2
-            if (counts[b.digit] === 0 || counts[b.digit] === 1)
+        function rm_digit(digit) {
+            --counts[digit]
+        }
+
+        // call this after collapse of 2 boxes labelled with @digit
+        function increase_digit(digit) {
+            --counts[digit]
+            if (counts[digit] === 0 || counts[digit] === 1)
                 --not_single
-            var new_digit = b.digit + 1
+            var new_digit = digit + 1
             ++counts[new_digit]
             if (counts[new_digit] === 2)
                 ++not_single
+            // TODO move this to another place
             if (not_single < 1)
                 send_ready_to_spawn()
-            b.evolve()
+        }
+
+        function report_stat() {
+            var present = []
+            for (var i = 1; i < 21; ++i)
+                if (counts[i] > 0) {
+                    present.push(i + "(" + counts[i] + " times)")
+                }
+            if (present.length > 0) {
+                console.log("there are: " + present.join(", "))
+            }
+            console.log("there are " + not_single + " not singles")
         }
 
         // init the lowest row
         function add_row() {
-            get_lock("add-row")
             var r = kAreaRows
             for (var c = 0; c < kAreaColumns; ++c) {
                 var upper = -1
                 if (typeof boxes[r - 1][c] !== 'undefined')
-                    upper = boxes[r - 1][c].digit
+                    upper = boxes[r - 1][c].get_digit()
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
                 set_digit(b, Util.generate_number(Math.min(4 + spawns / 5, 19), upper))
                 align_with_grid(b, r, c, 2)
@@ -404,7 +476,7 @@ Page {
             var bindings = 0
             // bind to the right
             for (var c = 0; bindings < max_bindings && c + 1 < kAreaColumns; ++c) {
-                if (Math.random() < prob && boxes[r][c].digit !== boxes[r][c + 1].digit) {
+                if (Math.random() < prob && boxes[r][c].get_digit() !== boxes[r][c + 1].get_digit()) {
                     ++bindings
                     boxes[r][c].bind(Logic.kRight, boxes[r][c + 1])
                     boxes[r][c + 1].bind(Logic.kLeft, boxes[r][c])
@@ -414,27 +486,12 @@ Page {
             for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
                 var box = boxes[r][c]
                 var above = boxes[r - 1][c]
-                if (typeof above !== 'undefined' && box.digit !== above.digit && !above.floating && !above.to_be_destroyed && Math.random() < prob) {
+                if (typeof above !== 'undefined' && box.get_digit() !== above.get_digit() && !above.floating && !above.to_be_destroyed && Math.random() < prob) {
                     ++bindings
                     box.bind(Logic.kTop, above)
                     above.bind(Logic.kBottom, box)
                 }
             }
-            release_lock()
-        }
-
-        function spawn() {
-            add_row()
-            /*
-            var tt = 1000 * 1000 * 1000
-            var ss = 0
-            console.log("waiting")
-            for (var i = 0; i < tt; ++i)
-                ss += i * (i - 1)
-            */
-            console.log("lifting")
-            lift_boxes()
-            console.log("lifted")
         }
 
         // return array with all boxes connected to @picked
@@ -463,41 +520,35 @@ Page {
             return queue
         }
 
-        function touch_start(mouse_event) {
-            //console.log("touch start: " + mouse_event.x + "," + mouse_event.y)
-            select(mouse_event.x, mouse_event.y + lift_offset)
+        // receive physical coordinates
+        function touch_start(x, y) {
+            //console.log("touch start: " + x + "," + y)
+            select(x, y + lift_offset)
         }
 
-        // Coordinates are virtual
+        // receive virtual coordinates
         function select(x, y) {
             if (pgroup.length > 0) {
                 return
             }
-            get_lock("select")
-
-            var column = x_to_column(x)
-            // TODO virtual y?
-            var row = y_to_row(y)
+            var column = coordinate_to_grid(x)
+            var row = coordinate_to_grid(y)
             if (0 > column || column >= kAreaColumns
                   || 0 > row && row >= kAreaRows) {
-                release_lock()
                 return
             }
             var picked = boxes[row][column]
             if (typeof picked === 'undefined') {
-                release_lock()
                 return
             }
             // TODO implement "catching"
             if (picked.floating) {
-                release_lock()
                 return
             }
             Util.fill_2d_array(used, false)
             pgroup = bfs(picked)
             for (var i in pgroup)
                 pgroup[i].floating = true
-            release_lock()
         }
 
         function center_of_box(box) {
@@ -519,22 +570,19 @@ Page {
             return Math.abs(move.x) < kEps && Math.abs(move.y) < kEps
         }
 
-        function touch_move(mouse_event) {
-            //console.log("touch move: " + mouse_event.x + "," + mouse_event.y)
-            touch_x = mouse_event.x
-            touch_y = mouse_event.y
-            move_to(mouse_event.x, mouse_event.y + lift_offset)
+        // receive physical coordinates
+        function touch_move(x, y) {
+            //console.log("touch move: " + x + "," + y)
+            touch_x = x
+            touch_y = y
+            move_to(x, y + lift_offset)
         }
 
-        /* 1. Works with virtual coordinates
-         * 2. Lock should be taken in advance
-         */
+        // receive virtual coordinates
         function move_to(x, y) {
             if (pgroup.length === 0) {
                 return
             }
-            get_lock("move-1")
-            //console.log("move: start, to row " + y_to_row(y))
             var target = Util.make_point(x, y)
             var step_limit = box_half_size - kEps
 
@@ -569,10 +617,10 @@ Page {
                 for (var i in pgroup) {
                     var cur_center = center_of_box(pgroup[i])
                     var cur_next = Util.point_sum(cur_center, move)
-                    left_column = Math.min(left_column, x_to_column(cur_next.x - box_half_size))
-                    right_column = Math.max(right_column, x_to_column(cur_next.x + box_half_size))
-                    top_row = Math.min(top_row, y_to_row(cur_next.y - box_half_size))
-                    bottom_row = Math.max(bottom_row, y_to_row(cur_next.y + box_half_size))
+                    left_column = Math.min(left_column, coordinate_to_grid(cur_next.x - box_half_size))
+                    right_column = Math.max(right_column, coordinate_to_grid(cur_next.x + box_half_size))
+                    top_row = Math.min(top_row, coordinate_to_grid(cur_next.y - box_half_size))
+                    bottom_row = Math.max(bottom_row, coordinate_to_grid(cur_next.y + box_half_size))
                 }
                 left_column = Math.min(Math.max(left_column, 0), kAreaColumns - 1)
                 right_column = Math.min(Math.max(right_column, 0), kAreaColumns - 1)
@@ -589,7 +637,7 @@ Page {
                         for (var i in pgroup) {
                             var cur = pgroup[i].get_virtual()
                             var box = Util.point_sum(cur, move)
-                            if (fixed.digit === pgroup[i].digit || !Util.find_collision(top_left, box, box_size))
+                            if ((fixed.get_digit() === pgroup[i].get_digit() && !fixed.to_evolve) || !Util.find_collision(top_left, box, box_size))
                                 continue
                             // find a direction with the smallest overlap
                             var overlap = 1e9
@@ -641,8 +689,8 @@ Page {
                 if (move_too_small(move))
                     break
                 // Check if boxes are moved out of their current cells
-                var row_add = y_to_row(center.y + move.y) - y_to_row(center.y)
-                var column_add = x_to_column(center.x + move.x) - x_to_column(center.x)
+                var row_add = coordinate_to_grid(center.y + move.y) - coordinate_to_grid(center.y)
+                var column_add = coordinate_to_grid(center.x + move.x) - coordinate_to_grid(center.x)
                 var move_in_grid = row_add !== 0 || column_add !== 0
                 //console.log("move: " + move.x + ", " + move.y)
                 // Move the group
@@ -664,7 +712,6 @@ Page {
                         }
                     }
                     if (typeof pgroup[0] === 'undefined') {
-                        release_lock()
                         complete()
                         return
                     } else if (lost) {
@@ -679,12 +726,9 @@ Page {
                             pgroup[i].floating = true
                         }
                     }
-                    release_lock()
                     gravitate()
-                    get_lock("move-2")
                 }
             }
-            release_lock()
         }
 
         /* 1. Search at each step for boxes, that should fall at least 1 level down
@@ -692,16 +736,20 @@ Page {
          * 2. Works with virtual coordinates.
          */
         function gravitate() {
-            get_lock("gravitate")
+            //console.log("GRAVITATE START")
             /* boxes falling at this step */
             var fgroup
+
             do {
                 fgroup = []
                 Util.fill_2d_array(used, false)
                 for (var r = 0; r < kAreaRows; ++r) {
                     for (var c = 0; c < kAreaColumns; ++c) {
+                        // DEBUGGING!!!
+                        //Util.delay(100000)
+
                         var box = boxes[r][c]
-                        if (typeof box === 'undefined' || used[r][c] || box.floating)
+                        if (typeof box === 'undefined' || used[r][c] || box.floating || box.to_evolve)
                             continue
                         var group = bfs(box)
                         // flag of whether could the group be dropped 1 unit down
@@ -711,12 +759,17 @@ Page {
                             if (b.adjacent[Logic.kBottom])
                                 continue
                             var next_row = b.row + 1
-                            if (next_row === kAreaRows) {
+                            if (next_row >= kAreaRows) {
                                 flag = false
                                 break
                             }
+                            if (typeof boxes[next_row] === 'undefined') {
+                                console.log("row #" + next_row + " is undef")
+                                console.log("b.row is " + b.row + " of type " + typeof b.row)
+                                console.log("next row has type " + typeof next_row)
+                            }
                             var under = boxes[next_row][b.column]
-                            if (typeof under !== 'undefined' && under.digit !== b.digit) {
+                            if (typeof under !== 'undefined' && (under.to_evolve || under.get_digit() !== b.get_digit())) {
                                 flag = false
                                 break
                             }
@@ -736,32 +789,23 @@ Page {
                     align_with_grid(box, box.row + 1, box.column, 0)
                 }
             } while (fgroup.length > 0)
-            release_lock()
+            //console.log("GRAVITATE END")
         }
 
-        function touch_release() {
-            //console.log("touch release")
-            complete()
-        }
-
-        /* 1. Works with virtual coordinates
-         * 2. Lock should be taken in advance
-         */
+        // works with virtual coordinates
         function complete() {
             if (pgroup.length === 0) {
                 return
             }
-            get_lock("complete")
             // relax group
             for (var i in pgroup) {
                 var box = pgroup[i]
                 if (typeof box === 'undefined')
                     continue
-                box.virtual_move_to(grid_x(box.column), grid_y(box.row), 0)
+                box.virtual_move_to(grid_line(box.column), grid_line(box.row), 0)
                 box.floating = false
             }
             pgroup = []
-            release_lock()
             // drop all
             gravitate()
         }
@@ -791,10 +835,21 @@ Page {
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
             lift_offset = 0
+            // init the lift rungs
+            var step = box_total_size / 5.0
+            lift_rungs = []
+            for (var i = 0; i < 4; ++i)
+                lift_rungs.push(step)
+            lift_rungs.push(box_total_size - 4 * step)
+
+            // init task queue
+            task_queue = Util.queue_new()
+            idle = true
 
             spawns = 0
-            spawn()
-            spawn()
+            start_lift()
+            //send_scroll()
+            //send_scroll()
         }
     }
 }

@@ -34,6 +34,12 @@ Rectangle {
     property bool to_be_destroyed: false
     property var destroy_callback
 
+    property bool to_evolve: false
+
+    function get_digit() {
+        return digit
+    }
+
     function set_digit(d) {
         digit = d
         label.text = String(d)
@@ -41,7 +47,12 @@ Rectangle {
         label.color = Logic.text_colors[(d - 1) % Logic.text_colors.length]
     }
 
+    function set_to_evolve() {
+        to_evolve = true
+    }
+
     function evolve() {
+        to_evolve = false
         make_smoke()
         set_digit(digit + 1)
     }
@@ -129,10 +140,9 @@ Rectangle {
 
     function set_to_destroy(callback) {
         destroy_callback = callback
+        to_be_destroyed = true
         if (!y_animation.running && !smoke_timer.running)
             self_destroy()
-        else
-            to_be_destroyed = true
     }
 
     function make_smoke() {
@@ -141,7 +151,10 @@ Rectangle {
     }
 
     function self_destroy() {
+        if (!to_be_destroyed)
+            return
         to_be_destroyed = false
+        console.log("destroying " + digit)
         destroy_callback()
         root.destroy()
     }
