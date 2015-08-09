@@ -504,28 +504,40 @@ Page {
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
+            var component_size = 1
             for (var c = 0; bindings < max_bindings && c + 1 < kAreaColumns; ++c) {
                 if (Math.random() < prob
-                        && boxes[r][c].get_digit() !== boxes[r][c + 1].get_digit()) {
+                        && boxes[r][c].get_digit() !== boxes[r][c + 1].get_digit()
+                        && component_size + 1 <= kAreaColumns - 2) {
                     ++bindings
                     boxes[r][c].bind(Logic.kRight, boxes[r][c + 1])
                     boxes[r][c + 1].bind(Logic.kLeft, boxes[r][c])
+                    ++component_size
+                } else {
+                    component_size = 1
                 }
             }
             // bind to the top
             for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
                 var box = boxes[r][c]
                 var above = boxes[r - 1][c]
-                if (typeof above !== 'undefined'
-                        && box.get_digit() !== above.get_digit()
-                        && !above.floating
-                        && !above.to_evolve
-                        && !above.to_be_destroyed
-                        && Math.random() < prob) {
-                    ++bindings
-                    box.bind(Logic.kTop, above)
-                    above.bind(Logic.kBottom, box)
-                }
+                if (typeof above === 'undefined'
+                        || box.get_digit() === above.get_digit()
+                        || above.floating
+                        || above.to_evolve
+                        || above.to_be_destroyed
+                        || Math.random() > prob)
+                    continue
+                // Calculate sizes of components, connected to @box and @above,
+                // to not exceed limit for component size
+                Util.fill_2d_array(used, false)
+                var box_group = bfs(box)
+                var above_group = bfs(above)
+                if (box_group.length + above_group.length > kAreaColumns - 2)
+                    continue
+                ++bindings
+                box.bind(Logic.kTop, above)
+                above.bind(Logic.kBottom, box)
             }
         }
 
