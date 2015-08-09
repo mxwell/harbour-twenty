@@ -57,6 +57,12 @@ Rectangle {
         set_digit(digit + 1)
     }
 
+    function set_to_pop() {
+        to_be_destroyed = true
+        destroy_callback = function() {}
+        virtual_move_to(pos_x, -200, 0)
+    }
+
     function get_virtual() {
         return Util.make_point(pos_x, pos_y - phys_virt_diff)
     }
@@ -141,6 +147,7 @@ Rectangle {
     function set_to_destroy(callback) {
         destroy_callback = callback
         to_be_destroyed = true
+        shutdown_timer.start()
         if (!y_animation.running && !smoke_timer.running)
             self_destroy()
     }
@@ -233,7 +240,7 @@ Rectangle {
                 running: false
                 onTriggered: {
                     smoke.enabled = false
-                    if (root.to_be_destroyed)
+                    if (!running && root.to_be_destroyed)
                         self_destroy()
                 }
             }
@@ -263,7 +270,6 @@ Rectangle {
     Behavior on y {
         NumberAnimation {
             id: y_animation
-            duration: 100
             easing.type: Easing.OutQuad
 
             onRunningChanged: {
@@ -275,8 +281,25 @@ Rectangle {
     Behavior on x {
         NumberAnimation {
             id: x_animation
-            duration: 100
             easing.type: Easing.OutQuad
+            onRunningChanged: {
+                if (!running && root.to_be_destroyed)
+                    self_destroy()
+            }
+        }
+    }
+
+    // Workaround: timer will destroy object,
+    // if it wasn't destroyed upon animation finish (probably because interrupted animation)
+    Timer {
+        id: shutdown_timer
+        interval: 1000  /* 1 second */
+        running: false
+        onTriggered: {
+            if (!running && to_be_destroyed) {
+                console.log("ERROR: this timer must not be triggered")
+                self_destroy()
+            }
         }
     }
 }

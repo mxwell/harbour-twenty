@@ -45,6 +45,14 @@ Page {
         game.start_lift()
     }
 
+    function update_score() {
+        if (score_box.get_digit() !== game.max_digit)
+            score_box.set_digit(game.max_digit)
+        if (game.score > 1) {
+            score_multiplier.text = "x " + String(game.score)
+        }
+    }
+
     SilicaFlickable {
         id: flickable
         anchors { left: parent.left; right: parent.right }
@@ -69,10 +77,19 @@ Page {
                 bottom: parent.bottom
             }
 
-            Label {
+            Row {
+                id: score_row
                 anchors.horizontalCenter: parent.horizontalCenter
-                id: scoreLabel
-                text: qsTr("Score")
+
+                Box {
+                    id: score_box
+                    width: Theme.itemSizeSmall
+                    box_spacing: width / 10
+                }
+
+                Label {
+                    id: score_multiplier
+                }
             }
 
             Row {
@@ -189,6 +206,7 @@ Page {
 
             Component.onCompleted: {
                 game.send_ready_to_spawn.connect(restart_progress)
+                game.send_score_change.connect(update_score)
                 game.send_spawn_end.connect(progressBar.spawn_finish)
                 game.send_spawn_fail.connect(progressBar.spawn_fail)
 
@@ -221,6 +239,8 @@ Page {
 
         property var counts
         property int not_single: 0
+        property int max_digit: 0
+        property int score: 0
 
         // box_size + box_spacing = box_total_size
         property int box_total_size
@@ -240,13 +260,13 @@ Page {
 
         property double kEps: 1e-6
 
-
         property int spawns: 0
 
         /* External signals */
         signal send_ready_to_spawn()
         signal send_spawn_end()
         signal send_spawn_fail()
+        signal send_score_change()
 
         /*** Task queue ***/
         property var task_queue
@@ -258,6 +278,7 @@ Page {
         signal send_touch_select(double x, double y)
         signal send_touch_move(double x, double y)
         signal send_touch_release()
+        signal send_evolve(var b)
 
         function init() {
             game.send_gravitate.connect(add_task_gravitate)
@@ -265,6 +286,7 @@ Page {
             game.send_touch_select.connect(add_task_select)
             game.send_touch_move.connect(add_task_move)
             game.send_touch_release.connect(add_task_release)
+            game.send_evolve.connect(add_task_evolve)
         }
 
         // add to task queue, and execute it immediately if idle
@@ -306,8 +328,28 @@ Page {
             run_or_schedule(Util.make_task("release", complete))
         }
 
+        function add_task_evolve(box) {
+            run_or_schedule(Util.make_task("evolve", function() {
+                if (typeof box !== 'undefined' && box.to_evolve) {
+                    box.to_evolve = false
+                    var digit = box.get_digit()
+                    box.evolve()
+                    add_digit(digit + 1)
+                    rm_digit(digit)
+                    rm_digit(digit)
+                    // destroy box in grid too, if it reached max value
+                    if (digit + 1 === Logic.kMaxBoxNumber) {
+                        boxes[box.row][box.column] = undefined
+                        box.set_to_pop()
+                    }
+                } else {
+                    console.log("ERROR: saved box is lost")
+                }
+                send_gravitate()
+            }))
+        }
+
         function unbind_from_grid(box) {
-            //console.log("unbinding at row " + box.row + ", column " + box.column)
             boxes[box.row][box.column] = undefined
         }
 
@@ -322,23 +364,14 @@ Page {
                 } else {
                     console.log("merging boxes with digit " + box.get_digit())
                 }
-                box.unbind_all()
-                rm_digit(box.get_digit())
 
-                boxes[r][c].unbind_all()
+                box.unbind_all()
                 var saved = boxes[r][c]
+                saved.unbind_all()
                 saved.set_to_evolve()
 
                 box.set_to_destroy(function() {
-                    if (typeof saved !== 'undefined') {
-                        var prev_digit = saved.get_digit()
-                        saved.evolve()
-                        increase_digit(prev_digit)
-                    } else {
-                        console.log("ERROR: saved box is lost")
-                    }
-
-                    send_gravitate()
+                    send_evolve(saved)
                 })
                 return false
             }
@@ -419,34 +452,31 @@ Page {
             return Math.floor((x - box_spacing) / box_total_size)
         }
 
-        function set_digit(b, digit) {
-            ++counts[digit]
-            if (counts[digit] === 2)
-                ++not_single
-            b.set_digit(digit)
+        function add_digit(digit) {
+            if (digit < Logic.kMaxBoxNumber) {
+                ++counts[digit]
+                if (counts[digit] === 2)
+                    ++not_single
+            }
+            if (digit > max_digit) {
+                max_digit = digit
+                send_score_change()
+            }
+            if (digit === Logic.kMaxBoxNumber) {
+                ++score
+                send_score_change()
+            }
         }
 
         function rm_digit(digit) {
             --counts[digit]
-        }
-
-        // call this after collapse of 2 boxes labelled with @digit
-        function increase_digit(digit) {
-            --counts[digit]
-            if (counts[digit] === 0 || counts[digit] === 1)
+            if (counts[digit] === 1)
                 --not_single
-            var new_digit = digit + 1
-            ++counts[new_digit]
-            if (counts[new_digit] === 2)
-                ++not_single
-            // TODO move this to another place
-            if (not_single < 1)
-                send_ready_to_spawn()
         }
 
         function report_stat() {
             var present = []
-            for (var i = 1; i < 21; ++i)
+            for (var i = 1; i <= Logic.kMaxBoxNumber; ++i)
                 if (counts[i] > 0) {
                     present.push(i + "(" + counts[i] + " times)")
                 }
@@ -464,16 +494,19 @@ Page {
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].get_digit()
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
-                set_digit(b, Util.generate_number(Math.min(4 + spawns / 5, 19), upper))
+                var digit = Util.generate_number(Math.min(4 + spawns / 4, Logic.kMaxBoxNumber - 1), upper)
+                b.set_digit(digit)
+                add_digit(digit)
                 align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
-            var max_bindings = Math.min(spawns / 6, binding_slots - 4)
+            var max_bindings = Math.min(spawns / 8, binding_slots - 5)
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
             for (var c = 0; bindings < max_bindings && c + 1 < kAreaColumns; ++c) {
-                if (Math.random() < prob && boxes[r][c].get_digit() !== boxes[r][c + 1].get_digit()) {
+                if (Math.random() < prob
+                        && boxes[r][c].get_digit() !== boxes[r][c + 1].get_digit()) {
                     ++bindings
                     boxes[r][c].bind(Logic.kRight, boxes[r][c + 1])
                     boxes[r][c + 1].bind(Logic.kLeft, boxes[r][c])
@@ -483,7 +516,12 @@ Page {
             for (var c = 0; bindings < max_bindings && c < kAreaColumns; ++c) {
                 var box = boxes[r][c]
                 var above = boxes[r - 1][c]
-                if (typeof above !== 'undefined' && box.get_digit() !== above.get_digit() && !above.floating && !above.to_be_destroyed && Math.random() < prob) {
+                if (typeof above !== 'undefined'
+                        && box.get_digit() !== above.get_digit()
+                        && !above.floating
+                        && !above.to_evolve
+                        && !above.to_be_destroyed
+                        && Math.random() < prob) {
                     ++bindings
                     box.bind(Logic.kTop, above)
                     above.bind(Logic.kBottom, box)
@@ -535,13 +573,11 @@ Page {
                 return
             }
             var picked = boxes[row][column]
-            if (typeof picked === 'undefined') {
-                return
-            }
             // TODO implement "catching"
-            if (picked.floating) {
+            if (typeof picked === 'undefined'
+                    || picked.to_evolve
+                    || picked.floating)
                 return
-            }
             Util.fill_2d_array(used, false)
             pgroup = bfs(picked)
             for (var i in pgroup)
@@ -733,7 +769,6 @@ Page {
          * 2. Works with virtual coordinates.
          */
         function gravitate() {
-            //console.log("GRAVITATE START")
             /* boxes falling at this step */
             var fgroup
 
@@ -742,11 +777,11 @@ Page {
                 Util.fill_2d_array(used, false)
                 for (var r = 0; r < kAreaRows; ++r) {
                     for (var c = 0; c < kAreaColumns; ++c) {
-                        // DEBUGGING!!!
-                        //Util.delay(100000)
-
                         var box = boxes[r][c]
-                        if (typeof box === 'undefined' || used[r][c] || box.floating || box.to_evolve)
+                        if (typeof box === 'undefined'
+                                || used[r][c]
+                                || box.floating
+                                || box.to_evolve)
                             continue
                         var group = bfs(box)
                         // flag of whether could the group be dropped 1 unit down
@@ -786,7 +821,9 @@ Page {
                     align_with_grid(box, box.row + 1, box.column, 0)
                 }
             } while (fgroup.length > 0)
-            //console.log("GRAVITATE END")
+            // check if spawn is required
+            if (not_single < 1)
+                send_ready_to_spawn()
         }
 
         // works with virtual coordinates
@@ -822,8 +859,10 @@ Page {
 
             boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             used = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
-            counts = Util.make_filled_array(21, 0)
+            counts = Util.make_filled_array(Logic.kMaxBoxNumber, 0)
             not_single = 0
+            max_digit = 0
+            score = 0
 
             var hsize = table.width / kAreaColumns
             var vsize = table.height / kAreaRows
