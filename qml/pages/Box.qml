@@ -93,12 +93,10 @@ Rectangle {
             var dy = ty - pos_y
             var dist = Math.sqrt(dx * dx + dy * dy)
             if (speed === 0)
-                duration = dist * 3
+                duration = dist * Logic.kSlowMultiplier
             else
-                duration= dist * 1.5
+                duration= dist * Logic.kFastMultiplier
         }
-        //console.log("duration " + dur + ", speed " + speed + ", tx " + tx + ", ty " + ty)
-
         y_animation.duration = duration
         x_animation.duration = duration
         set_position(tx, ty)
@@ -148,7 +146,8 @@ Rectangle {
         destroy_callback = callback
         to_be_destroyed = true
         shutdown_timer.start()
-        if (!y_animation.running && !smoke_timer.running)
+        // try destroy immediately
+        if (!x_animation.running && !y_animation.running && !smoke_timer.running)
             self_destroy()
     }
 
@@ -240,7 +239,7 @@ Rectangle {
                 running: false
                 onTriggered: {
                     smoke.enabled = false
-                    if (!running && root.to_be_destroyed)
+                    if (root.to_be_destroyed && !running && !y_animation.running && !x_animation.running)
                         self_destroy()
                 }
             }
@@ -271,9 +270,8 @@ Rectangle {
         NumberAnimation {
             id: y_animation
             easing.type: Easing.OutQuad
-
             onRunningChanged: {
-                if (!running && root.to_be_destroyed)
+                if (root.to_be_destroyed && !x_animation.running && !y_animation.running && !smoke_timer.running)
                     self_destroy()
             }
         }
@@ -283,7 +281,7 @@ Rectangle {
             id: x_animation
             easing.type: Easing.OutQuad
             onRunningChanged: {
-                if (!running && root.to_be_destroyed)
+                if (root.to_be_destroyed && !x_animation.running && !y_animation.running && !smoke_timer.running)
                     self_destroy()
             }
         }

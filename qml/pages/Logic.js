@@ -16,3 +16,6 @@ var body_colors = ["#ffff9c", "#ff2421", "#00f3ad", "#298aff", "#dea6ff", "#31eb
 var text_colors = ["#8b8e00", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ff5500", "#ffffff", "#ffffff", "white",   "#6b7d00", "#7b7900", "white",   "white",   "white",   "white",   "white",   "white",   "#d09400", "white" ]
 
 var kMaxBoxNumber = 20
+
+var kFastMultiplier = 2.5
+var kSlowMultiplier = 4.5

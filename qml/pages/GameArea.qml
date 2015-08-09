@@ -412,8 +412,8 @@ Page {
         }
 
         function align_with_grid(box, r, c, speed) {
-            bind_to_grid(box, r, c)
             box.virtual_move_to(grid_line(c), grid_line(r), speed)
+            bind_to_grid(box, r, c)
         }
 
         function start_lift() {
@@ -824,11 +824,6 @@ Page {
                             if (next_row >= kAreaRows) {
                                 flag = false
                                 break
-                            }
-                            if (typeof boxes[next_row] === 'undefined') {
-                                console.log("row #" + next_row + " is undef")
-                                console.log("b.row is " + b.row + " of type " + typeof b.row)
-                                console.log("next row has type " + typeof next_row)
                             }
                             var under = boxes[next_row][b.column]
                             if (typeof under !== 'undefined' && (under.to_evolve || under.get_digit() !== b.get_digit())) {
