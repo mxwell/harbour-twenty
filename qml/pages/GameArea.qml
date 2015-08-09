@@ -18,12 +18,14 @@ Page {
     function pause_game() {
         spawn_timer.stop()
         touch.enabled = false
+        table.opacity = 0.25
         pause.toggle_view(false)
     }
 
     function resume_game() {
         spawn_timer.start()
         touch.enabled = true
+        table.opacity = 1
         pause.toggle_view(true)
     }
 
