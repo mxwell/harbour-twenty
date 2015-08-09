@@ -415,7 +415,7 @@ Page {
 
         function align_with_grid(box, r, c, speed) {
             box.virtual_move_to(grid_line(c), grid_line(r), speed)
-            bind_to_grid(box, r, c)
+            return bind_to_grid(box, r, c)
         }
 
         function start_lift() {
@@ -563,6 +563,8 @@ Page {
 
         // return array with all boxes connected to @picked
         function bfs(picked) {
+            if (typeof picked === 'undefined')
+                return []
             if (typeof picked.row === 'undefined' || typeof picked.column === 'undefined') {
                 console.log("ERROR: picked has no row or column")
             }
@@ -778,22 +780,26 @@ Page {
                         complete()
                         return
                     } else if (lost) {
-                        // get newly picked boxes
-                        Util.fill_2d_array(used, false)
-                        var updated_group = bfs(pgroup[0])
-                        // release the boxes of the difference
-                        for (var i in pgroup) {
-                            var b = pgroup[i]
-                            if (typeof b !== 'undefined' && updated_group.indexOf(b) === -1) {
-                                b.virtual_move_to(grid_line(b.column), grid_line(b.row), 0)
-                                b.floating = false
-                            }
-                        }
-                        pgroup = updated_group
+                        reselect()
                     }
                     gravitate()
                 }
             }
+        }
+
+        function reselect() {
+            // get newly picked boxes
+            Util.fill_2d_array(used, false)
+            var updated_group = bfs(pgroup[0])
+            // release the boxes of the difference
+            for (var i in pgroup) {
+                var b = pgroup[i]
+                if (typeof b !== 'undefined' && updated_group.indexOf(b) === -1) {
+                    b.virtual_move_to(grid_line(b.column), grid_line(b.row), 0)
+                    b.floating = false
+                }
+            }
+            pgroup = updated_group
         }
 
         /* 1. Search at each step for boxes, that should fall at least 1 level down
@@ -843,10 +849,24 @@ Page {
                     unbind_from_grid(box)
                 }
                 // and bind them lower
+                var lost = false // impact on pgroup
                 for (var i in fgroup) {
                     var box = fgroup[i]
-                    align_with_grid(box, box.row + 1, box.column, 0)
+                    var row = box.row + 1
+                    var column = box.column
+                    if (!align_with_grid(box, row, column, 0) && boxes[row][column].floating) {
+                        var id = pgroup.indexOf(boxes[row][column])
+                        if (id >= 0) {
+                            var p = pgroup[id]
+                            p.virtual_move_to(grid_line(p.column), grid_line(p.row), 0)
+                            p.floating = false
+                            pgroup[id] = undefined
+                            lost = true
+                        }
+                    }
                 }
+                if (lost)
+                    reselect()
             } while (fgroup.length > 0)
             // check if spawn is required
             if (not_single < 1)
