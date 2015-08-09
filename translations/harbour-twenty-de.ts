@@ -33,6 +33,14 @@
         <source>Restart</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Game over</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New game</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SecondPage</name>

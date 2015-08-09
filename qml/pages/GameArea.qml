@@ -111,8 +111,18 @@ Page {
 
                     function spawn_fail() {
                         console.log("spawn failed")
+                        progressBar.visible = false
                         pause.visible = false
                         touch.enabled = false
+
+                        table.opacity = 0.25
+                        game_over.y = -game_over.height
+                        game_over.visible = true
+                        game_over_move.start()
+
+                        restart_button.y = gameArea.height
+                        restart_button.visible = true
+                        restart_button_move.start()
                     }
 
                     Timer {
@@ -138,10 +148,9 @@ Page {
                     icon.source: "image://theme/icon-l-pause"
 
                     function toggle_view(playing) {
-                        if (playing) {
+                        if (playing)
                             icon.source = "image://theme/icon-l-pause"
-                            game.report_stat()
-                        } else
+                        else
                             icon.source = "image://theme/icon-l-play"
                         visible = true
                     }
@@ -197,8 +206,12 @@ Page {
             }
 
             function init_game() {
+                game_over.visible = false
+                restart_button.visible = false
+                table.opacity = 1
                 game.layout()
                 progressBar.value = 0
+                progressBar.visible = true
                 spawn_timer.start()
                 touch.enabled = true
                 pause.toggle_view(true)
@@ -218,14 +231,49 @@ Page {
             }
         }
 
-        Timer {
-            id: testTimer
-            repeat: false
-            interval: 100
-            running: false
-            triggeredOnStart: true
-            onTriggered: {
-                console.log("trigger")
+        Item {
+            id: final_splash
+            anchors.fill: parent
+
+            Label {
+                id: game_over
+                anchors {
+                    horizontalCenter: parent.horizontalCenter
+                }
+                visible: false
+                color: Theme.primaryColor
+                font.pixelSize: Theme.fontSizeLarge
+                text: qsTr("Game over")
+                fontSizeMode: Text.HorizontalFit
+
+                NumberAnimation on y {
+                    id: game_over_move
+                    from: -game_over.height
+                    to: Theme.itemSizeLarge
+                    duration: 500
+                    easing.type: Easing.Linear
+                }
+            }
+
+            Button {
+                id: restart_button
+                anchors {
+                    horizontalCenter: parent.horizontalCenter
+                }
+                visible: false
+                text: qsTr("New game")
+                onClicked: table.init_game()
+
+                SequentialAnimation on y {
+                    id: restart_button_move
+                    PauseAnimation { duration: 300 }
+                    NumberAnimation {
+                        from: gameArea.height
+                        to: Theme.itemSizeLarge + 2 * game_over.height
+                        duration: 500
+                        easing.type: Easing.Linear
+                    }
+                }
             }
         }
     }
@@ -472,18 +520,6 @@ Page {
             --counts[digit]
             if (counts[digit] === 1)
                 --not_single
-        }
-
-        function report_stat() {
-            var present = []
-            for (var i = 1; i <= Logic.kMaxBoxNumber; ++i)
-                if (counts[i] > 0) {
-                    present.push(i + "(" + counts[i] + " times)")
-                }
-            if (present.length > 0) {
-                console.log("there are: " + present.join(", "))
-            }
-            console.log("there are " + not_single + " not singles")
         }
 
         // init the lowest row
