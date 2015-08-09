@@ -18,7 +18,6 @@ SOURCES += src/harbour-twenty.cpp
 
 OTHER_FILES += qml/harbour-twenty.qml \
     qml/cover/CoverPage.qml \
-    qml/pages/SecondPage.qml \
     rpm/harbour-twenty.changes.in \
     rpm/harbour-twenty.spec \
     rpm/harbour-twenty.yaml \
@@ -27,7 +26,8 @@ OTHER_FILES += qml/harbour-twenty.qml \
     qml/pages/GameArea.qml \
     qml/pages/Box.qml \
     qml/pages/Logic.js \
-    qml/pages/Util.js
+    qml/pages/Util.js \
+    qml/pages/AboutPage.qml
 
 # to disable building translations every time, comment out the
 # following CONFIG line
