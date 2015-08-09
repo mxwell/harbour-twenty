@@ -32,7 +32,7 @@ Dialog {
 
             Label {
                 textFormat: Text.RichText
-                text: qsTr("This is an open source[1] implementation of Twenty[2], a fast-moving game with numbers and gravity.")
+                text: qsTr("This is an open source[1] implementation of Twenty[2], a fast-paced game with numbers and gravity.")
                 font.pixelSize: Theme.fontSizeSmall
                 width: parent.width - Theme.itemSizeMedium
                 anchors.horizontalCenter: parent.horizontalCenter
