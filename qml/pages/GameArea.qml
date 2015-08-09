@@ -894,7 +894,7 @@ Page {
             var hsize = table.width / kAreaColumns
             var vsize = table.height / kAreaRows
             box_total_size = Math.floor(Math.min(hsize, vsize))
-            box_spacing = box_total_size / 10
+            box_spacing = box_total_size / 8
             box_size = box_total_size - box_spacing
             box_half_size = box_size / 2
             lift_offset = 0
