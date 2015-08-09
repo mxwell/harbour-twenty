@@ -8,11 +8,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Github</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>How to play</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>Original game</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Github</source>
+        <source>This is an open source[1] implementation of Twenty[2], a fast-moving game with numbers and gravity.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
