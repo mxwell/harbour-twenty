@@ -5,8 +5,6 @@ import "./Util.js" as Util
 
 
 Page {
-    id: root
-
     property int kAreaRows: 8
     property int kAreaColumns: 7
 
@@ -30,11 +28,12 @@ Page {
     }
 
     function update_score() {
-        if (score_box.get_digit() !== game.max_digit)
-            score_box.set_digit(game.max_digit)
-        if (game.score > 1) {
-            score_multiplier.text = "x " + String(game.score)
-        }
+        if (score_box.get_digit() !== max_number)
+            score_box.set_digit(max_number)
+        if (score > 1)
+            score_multiplier.text = "x " + String(score)
+        else
+            score_multiplier.text = ""
     }
 
     SilicaFlickable {
@@ -145,9 +144,9 @@ Page {
 
                     onClicked: {
                         if (spawn_timer.running)
-                            root.pause_game()
+                            pause_game()
                         else
-                            root.resume_game()
+                            resume_game()
                     }
                 }
             }
@@ -271,8 +270,6 @@ Page {
 
         property var counts
         property int not_single: 0
-        property int max_digit: 0
-        property int score: 0
 
         // box_size + box_spacing = box_total_size
         property int box_total_size
@@ -490,8 +487,8 @@ Page {
                 if (counts[digit] === 2)
                     ++not_single
             }
-            if (digit > max_digit) {
-                max_digit = digit
+            if (digit > max_number) {
+                max_number = digit
                 send_score_change()
             }
             if (digit === Logic.kMaxBoxNumber) {
@@ -908,7 +905,7 @@ Page {
             used = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             counts = Util.make_filled_array(Logic.kMaxBoxNumber, 0)
             not_single = 0
-            max_digit = 0
+            max_number = 0
             score = 0
 
             var hsize = table.width / kAreaColumns

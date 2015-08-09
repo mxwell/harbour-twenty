@@ -31,9 +31,18 @@
 import QtQuick 2.1
 import Sailfish.Silica 1.0
 import "pages"
+import "cover"
 
-ApplicationWindow
-{
-    initialPage: Component { GameArea { } }
-    cover: Qt.resolvedUrl("cover/CoverPage.qml")
+ApplicationWindow {
+    id: main
+
+    property int max_number: 1
+    property int score: 1
+
+    initialPage: game_page
+    cover: cover_page
+
+    GameArea { id: game_page }
+
+    CoverPage { id: cover_page }
 }
