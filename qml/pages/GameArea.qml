@@ -15,6 +15,18 @@ Page {
         game.start_lift()
     }
 
+    function pause_game() {
+        spawn_timer.stop()
+        touch.enabled = false
+        pause.toggle_view(false)
+    }
+
+    function resume_game() {
+        spawn_timer.start()
+        touch.enabled = true
+        pause.toggle_view(true)
+    }
+
     function update_score() {
         if (score_box.get_digit() !== game.max_digit)
             score_box.set_digit(game.max_digit)
@@ -32,7 +44,10 @@ Page {
         PullDownMenu {
             MenuItem {
                 text: qsTr("About")
-                onClicked: pageStack.push("AboutPage.qml")
+                onClicked: {
+                    pause_game()
+                    pageStack.push("AboutPage.qml")
+                }
             }
 
             MenuItem {
@@ -127,14 +142,10 @@ Page {
                     }
 
                     onClicked: {
-                        if (spawn_timer.running) {
-                            spawn_timer.stop()
-                            touch.enabled = false
-                        } else {
-                            spawn_timer.start()
-                            touch.enabled = true
-                        }
-                        toggle_view(spawn_timer.running)
+                        if (spawn_timer.running)
+                            root.pause_game()
+                        else
+                            root.resume_game()
                     }
                 }
             }
