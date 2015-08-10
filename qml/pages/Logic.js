@@ -17,5 +17,5 @@ var text_colors = ["#8b8e00", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffff
 
 var kMaxBoxNumber = 20
 
-var kFastMultiplier = 2.5
-var kSlowMultiplier = 4.5
+var kFastMultiplier = 2
+var kSlowMultiplier = 3

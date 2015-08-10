@@ -91,7 +91,6 @@ Page {
                     signal send()
 
                     function spawn_finish(result) {
-                        console.log("spawn finished")
                         value = 0
                         spawn_timer.restart()
                     }
@@ -390,8 +389,6 @@ Page {
                 } else if (boxes[r][c] === box) {
                     console.log("ERROR: the same")
                     return true
-                } else {
-                    console.log("merging boxes with digit " + box.get_digit())
                 }
 
                 box.unbind_all()
@@ -928,10 +925,6 @@ Page {
 
             spawns = 0
             start_lift()
-            //send_scroll()
-            //send_scroll()
         }
     }
 }
-
-

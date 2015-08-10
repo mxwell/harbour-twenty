@@ -160,7 +160,6 @@ Rectangle {
         if (!to_be_destroyed)
             return
         to_be_destroyed = false
-        console.log("destroying " + digit)
         destroy_callback()
         root.destroy()
     }
