@@ -152,7 +152,8 @@ Rectangle {
     }
 
     function make_smoke() {
-        smoke.enabled = true
+        particle_system.start()
+        smoke.pulse(body.smoke_life)
         smoke_timer.start()
     }
 
@@ -185,10 +186,12 @@ Rectangle {
             font.bold: true
         }
 
-        property int smoke_life: 250
+        property int smoke_life: 300
 
         ParticleSystem {
+            id: particle_system
             anchors.fill: parent
+            running: false
 
             Turbulence {
                 id: turb
@@ -206,7 +209,6 @@ Rectangle {
             ImageParticle {
                 groups: ["smoke"]
                 source: "qrc:///img/particle-brick.png"
-                //color: "#11111111"
                 colorVariation: 0.7
             }
 
@@ -214,12 +216,11 @@ Rectangle {
                 id: smoke
                 group: "smoke"
                 enabled: false
-                x: body.width / 2
-                y: body.height
+                x: body.width * 0.5
+                y: body.height * 0.8
 
                 emitRate: 200
-                lifeSpan: body.smoke_life
-                lifeSpanVariation: 50
+                lifeSpan: body.smoke_life / 2
                 size: 32
                 endSize: -1
                 sizeVariation: 8
@@ -237,7 +238,9 @@ Rectangle {
                 interval: body.smoke_life
                 running: false
                 onTriggered: {
-                    smoke.enabled = false
+                    particle_system.pause()
+                    particle_system.reset()
+                    particle_system.stop()
                     if (root.to_be_destroyed && !running && !y_animation.running && !x_animation.running)
                         self_destroy()
                 }
