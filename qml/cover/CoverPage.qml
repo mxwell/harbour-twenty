@@ -42,7 +42,6 @@ CoverBackground {
                 cover_multiplier.text = "x" + String(score)
             else
                 cover_multiplier.text = ""
-            game_page.pause_game()
         }
     }
 }

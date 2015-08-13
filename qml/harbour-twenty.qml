@@ -38,6 +38,7 @@ ApplicationWindow {
 
     property int max_number: 1
     property int score: 1
+    property bool first_activation: true
 
     initialPage: game_page
     cover: cover_page
@@ -45,4 +46,13 @@ ApplicationWindow {
     GameArea { id: game_page }
 
     CoverPage { id: cover_page }
+
+    onApplicationActiveChanged: {
+        if (Qt.application.state !== Qt.ApplicationActive) {
+            game_page.pause_game(true)
+        } else if (first_activation) {
+            game_page.launch_game()
+            first_activation = false
+        }
+    }
 }

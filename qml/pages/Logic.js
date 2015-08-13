@@ -19,3 +19,8 @@ var kMaxBoxNumber = 20
 
 var kFastMultiplier = 2
 var kSlowMultiplier = 3
+
+var kGameStateNo        = 0
+var kGameStateCreated   = 1
+var kGameStateStarted   = 2
+var kGameStatePaused    = 3

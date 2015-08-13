@@ -13,18 +13,44 @@ Page {
         game.start_lift()
     }
 
-    function pause_game() {
+    function init_game() {
+        table.game_state = Logic.kGameStateNo
+        game_over.visible = false
+        restart_button.visible = false
+
+        spawn_timer.stop()
+        progressBar.value = 0
+        progressBar.visible = true
+        table.opacity = 0.25
+        pause.toggle_view(false)
+
+        game.layout()
+        table.game_state = Logic.kGameStateCreated
+    }
+
+    function launch_game() {
+        if (table.game_state !== Logic.kGameStateCreated
+                && table.game_state !== Logic.kGameStatePaused) {
+            console.log("ERROR: launch game when state is " + table.game_state)
+        }
+        table.opacity = 1
+        touch.enabled = true
+        pause.toggle_view(true)
+        spawn_timer.start()
+        table.game_state = Logic.kGameStateStarted
+    }
+
+    function pause_game(check_state) {
+        if (table.game_state !== Logic.kGameStateStarted) {
+            if (check_state)
+                return
+            console.log("ERROR: pause game when state is " + table.game_state)
+        }
         spawn_timer.stop()
         touch.enabled = false
         table.opacity = 0.25
         pause.toggle_view(false)
-    }
-
-    function resume_game() {
-        spawn_timer.start()
-        touch.enabled = true
-        table.opacity = 1
-        pause.toggle_view(true)
+        table.game_state = Logic.kGameStatePaused
     }
 
     function update_score() {
@@ -46,14 +72,18 @@ Page {
             MenuItem {
                 text: qsTr("About")
                 onClicked: {
-                    pause_game()
+                    if (table.game_state === Logic.kGameStateStarted)
+                        pause_game()
                     pageStack.push("AboutPage.qml")
                 }
             }
 
             MenuItem {
                 text: qsTr("Restart")
-                onClicked: table.init_game()
+                onClicked: {
+                    init_game()
+                    launch_game()
+                }
             }
         }
 
@@ -88,11 +118,10 @@ Page {
                     value: 0
                     maximumValue: 8 * 15
 
-                    signal send()
-
-                    function spawn_finish(result) {
+                    function spawn_finish() {
                         value = 0
-                        spawn_timer.restart()
+                        if (table.game_state === Logic.kGameStateStarted)
+                            spawn_timer.restart()
                     }
 
                     function spawn_fail() {
@@ -109,6 +138,7 @@ Page {
                         restart_button.y = gameArea.height
                         restart_button.visible = true
                         restart_button_move.start()
+                        table.game_state = Logic.kGameStateNo
                     }
 
                     Timer {
@@ -120,7 +150,7 @@ Page {
                             if (value === progressBar.maximumValue) {
                                 value = 0
                                 game.start_lift()
-                            } else {
+                            } else if (table.game_state === Logic.kGameStateStarted) {
                                 restart()
                             }
                             progressBar.value = value
@@ -142,10 +172,10 @@ Page {
                     }
 
                     onClicked: {
-                        if (spawn_timer.running)
+                        if (table.game_state === Logic.kGameStateStarted)
                             pause_game()
                         else
-                            resume_game()
+                            launch_game()
                     }
                 }
             }
@@ -187,17 +217,7 @@ Page {
                 onReleased: game.send_touch_release()
             }
 
-            function init_game() {
-                game_over.visible = false
-                restart_button.visible = false
-                table.opacity = 1
-                game.layout()
-                progressBar.value = 0
-                progressBar.visible = true
-                spawn_timer.start()
-                touch.enabled = true
-                pause.toggle_view(true)
-            }
+            property int game_state: Logic.kGameStateNo
 
             Component.onCompleted: {
                 game.send_ready_to_spawn.connect(restart_progress)
@@ -244,7 +264,10 @@ Page {
                 }
                 visible: false
                 text: qsTr("New game")
-                onClicked: table.init_game()
+                onClicked: {
+                    init_game()
+                    launch_game()
+                }
 
                 SequentialAnimation on y {
                     id: restart_button_move
