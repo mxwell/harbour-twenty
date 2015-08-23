@@ -157,6 +157,13 @@ Page {
                         }
                         running: false
                     }
+
+                    Timer {
+                        id: scroll_timer
+                        interval: 50
+                        repeat: false
+                        onTriggered: game.add_task_scroll()
+                    }
                 }
 
                 IconButton {
@@ -224,6 +231,7 @@ Page {
                 game.send_score_change.connect(update_score)
                 game.send_spawn_end.connect(progressBar.spawn_finish)
                 game.send_spawn_fail.connect(progressBar.spawn_fail)
+                game.send_start_scroll_timer.connect(scroll_timer.start)
 
                 game.box_component = Qt.createComponent("Box.qml")
                 // one-time action
@@ -318,6 +326,7 @@ Page {
         signal send_spawn_end()
         signal send_spawn_fail()
         signal send_score_change()
+        signal send_start_scroll_timer()
 
         /*** Task queue ***/
         property var task_queue
@@ -490,7 +499,7 @@ Page {
             if (pgroup.length > 0)
                 send_touch_move(touch_x, touch_y)
                 //move_to(touch_x, touch_y + lift_offset)
-            send_scroll()
+            send_start_scroll_timer()
         }
 
         function grid_line(line_id) {
@@ -936,11 +945,12 @@ Page {
             box_half_size = box_size / 2
             lift_offset = 0
             // init the lift rungs
-            var step = box_total_size / 5.0
+            var steps_total = 10
+            var step = box_total_size / steps_total
             lift_rungs = []
-            for (var i = 0; i < 4; ++i)
+            for (var i = 0; i + 1 < steps_total; ++i)
                 lift_rungs.push(step)
-            lift_rungs.push(box_total_size - 4 * step)
+            lift_rungs.push(box_total_size - (steps_total - 1) * step)
 
             // init task queue
             task_queue = Util.queue_new()
