@@ -629,7 +629,7 @@ Page {
             var column = coordinate_to_grid(x)
             var row = coordinate_to_grid(y)
             if (0 > column || column >= kAreaColumns
-                  || 0 > row && row >= kAreaRows) {
+                  || 0 > row || row >= kAreaRows) {
                 return
             }
             var picked = boxes[row][column]
