@@ -24,3 +24,5 @@ var kGameStateNo        = 0
 var kGameStateCreated   = 1
 var kGameStateStarted   = 2
 var kGameStatePaused    = 3
+
+var kGravityDelay   = 75 /* ms */

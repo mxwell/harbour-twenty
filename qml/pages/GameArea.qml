@@ -164,6 +164,18 @@ Page {
                         repeat: false
                         onTriggered: game.add_task_scroll()
                     }
+
+                    Timer {
+                        id: gravity_timer
+                        interval: Logic.kGravityDelay
+                        repeat: false
+
+                        function start_if_stopped() {
+                            if (!running)
+                                start()
+                        }
+                        onTriggered: game.add_task_gravitate()
+                    }
                 }
 
                 IconButton {
@@ -232,6 +244,7 @@ Page {
                 game.send_spawn_end.connect(progressBar.spawn_finish)
                 game.send_spawn_fail.connect(progressBar.spawn_fail)
                 game.send_start_scroll_timer.connect(scroll_timer.start)
+                game.send_start_gravity_timer.connect(gravity_timer.start_if_stopped)
 
                 game.box_component = Qt.createComponent("Box.qml")
                 // one-time action
@@ -327,6 +340,7 @@ Page {
         signal send_spawn_fail()
         signal send_score_change()
         signal send_start_scroll_timer()
+        signal send_start_gravity_timer()
 
         /*** Task queue ***/
         property var task_queue
@@ -405,7 +419,7 @@ Page {
                 } else {
                     console.log("ERROR: saved box is lost")
                 }
-                send_gravitate()
+                send_start_gravity_timer()
             }))
         }
 
@@ -427,10 +441,10 @@ Page {
                 var saved = boxes[r][c]
                 saved.unbind_all()
                 saved.set_to_evolve()
-
                 box.set_to_destroy(function() {
                     send_evolve(saved)
                 })
+
                 return false
             }
             boxes[r][c] = box
@@ -451,8 +465,6 @@ Page {
             send_scroll()
         }
 
-        // move existing rows up: return true if no boxes should be destroyed for the move,
-        //  otherwise return false and don't move
         function lift_step() {
             var ok = true
             if (lift_pos >= lift_rungs.length) {
@@ -471,7 +483,8 @@ Page {
                 lift_offset = 0
                 lift_pos = 0
                 ++spawns
-                send_gravitate()
+                send_start_gravity_timer()
+                // notify progress bar
                 send_spawn_end()
                 return
             }
@@ -498,7 +511,6 @@ Page {
             }
             if (pgroup.length > 0)
                 send_touch_move(touch_x, touch_y)
-                //move_to(touch_x, touch_y + lift_offset)
             send_start_scroll_timer()
         }
 
@@ -808,7 +820,7 @@ Page {
                     } else if (lost) {
                         reselect()
                     }
-                    gravitate()
+                    send_start_gravity_timer()
                 }
             }
         }
@@ -833,67 +845,81 @@ Page {
          * 2. Works with virtual coordinates.
          */
         function gravitate() {
-            /* boxes falling at this step */
-            var fgroup
+            /* to collect falling boxes */
+            var fgroup = []
+            Util.fill_2d_array(used, false)
+            // freeing: element is set to true if the corresponding box is to be dropped
+            var freeing = Util.make_2d_array(kAreaRows, kAreaColumns)
+            Util.fill_2d_array(freeing, false)
 
-            do {
-                fgroup = []
-                Util.fill_2d_array(used, false)
-                for (var r = 0; r < kAreaRows; ++r) {
-                    for (var c = 0; c < kAreaColumns; ++c) {
-                        var box = boxes[r][c]
-                        if (typeof box === 'undefined'
-                                || used[r][c]
-                                || box.floating
-                                || box.to_evolve)
+            for (var r = kAreaRows - 1; r >= 0; --r) {
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box === 'undefined'
+                            || used[r][c]
+                            || box.floating
+                            || box.to_evolve)
+                        continue
+                    var group = bfs(box)
+                    // flag of whether could the group be dropped 1 unit down
+                    var flag = true
+                    for (var i in group) {
+                        var b = group[i]
+                        if (b.adjacent[Logic.kBottom])
                             continue
-                        var group = bfs(box)
-                        // flag of whether could the group be dropped 1 unit down
-                        var flag = true
+                        var next_row = b.row + 1
+                        if (next_row >= kAreaRows) {
+                            flag = false
+                            break
+                        }
+                        var under = boxes[next_row][b.column]
+                        if (!freeing[next_row][b.column]
+                                && typeof under !== 'undefined'
+                                && (under.to_evolve || under.get_digit() !== b.get_digit())) {
+                            flag = false
+                            break
+                        }
+                    }
+                    if (flag) {
+                        fgroup = fgroup.concat(group)
                         for (var i in group) {
                             var b = group[i]
-                            if (b.adjacent[Logic.kBottom])
-                                continue
-                            var next_row = b.row + 1
-                            if (next_row >= kAreaRows) {
-                                flag = false
-                                break
-                            }
-                            var under = boxes[next_row][b.column]
-                            if (typeof under !== 'undefined' && (under.to_evolve || under.get_digit() !== b.get_digit())) {
-                                flag = false
-                                break
-                            }
-                        }
-                        if (flag)
-                            fgroup = fgroup.concat(group)
-                    }
-                }
-                // unbind all falling
-                for (var i in fgroup) {
-                    var box = fgroup[i]
-                    unbind_from_grid(box)
-                }
-                // and bind them lower
-                var lost = false // impact on pgroup
-                for (var i in fgroup) {
-                    var box = fgroup[i]
-                    var row = box.row + 1
-                    var column = box.column
-                    if (!align_with_grid(box, row, column, 0) && boxes[row][column].floating) {
-                        var id = pgroup.indexOf(boxes[row][column])
-                        if (id >= 0) {
-                            var p = pgroup[id]
-                            p.virtual_move_to(grid_line(p.column), grid_line(p.row), 0)
-                            p.floating = false
-                            pgroup[id] = undefined
-                            lost = true
+                            freeing[b.row][b.column] = true
                         }
                     }
                 }
-                if (lost)
-                    reselect()
-            } while (fgroup.length > 0)
+            }
+            // unbind all falling
+            for (var i in fgroup) {
+                var box = fgroup[i]
+                unbind_from_grid(box)
+            }
+            // and bind them lower
+            var lost = false // impact on pgroup
+            var merged = false // flag if any merge happened
+            for (var i in fgroup) {
+                var box = fgroup[i]
+                var row = box.row + 1
+                var column = box.column
+                if (align_with_grid(box, row, column, 1))
+                    continue
+                merged = true
+                if (boxes[row][column].floating) {
+                    merged = true
+                    var id = pgroup.indexOf(boxes[row][column])
+                    if (id >= 0) {
+                        var p = pgroup[id]
+                        p.virtual_move_to(grid_line(p.column), grid_line(p.row), 1)
+                        p.floating = false
+                        pgroup[id] = undefined
+                        lost = true
+                    }
+                }
+            }
+            if (lost)
+                reselect()
+            if (fgroup.length > 0)
+                send_start_gravity_timer()
             // check if spawn is required
             if (not_single < 1)
                 send_ready_to_spawn()
@@ -914,7 +940,7 @@ Page {
             }
             pgroup = []
             // drop all
-            gravitate()
+            send_start_gravity_timer()
         }
 
         function layout() {
