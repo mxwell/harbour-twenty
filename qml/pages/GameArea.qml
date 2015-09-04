@@ -588,9 +588,8 @@ Page {
                     continue
                 // Calculate sizes of components, connected to @box and @above,
                 // to not exceed limit for component size
-                Util.fill_2d_array(used, false)
                 var box_group = bfs(box)
-                var above_group = bfs(above)
+                var above_group = bfs(above, true)
                 if (box_group.length + above_group.length > kAreaColumns - 2)
                     continue
                 ++bindings
@@ -600,7 +599,7 @@ Page {
         }
 
         // return array with all boxes connected to @picked
-        function bfs(picked) {
+        function bfs(picked, omit_used_reset) {
             if (typeof picked === 'undefined')
                 return []
             if (typeof picked.row === 'undefined' || typeof picked.column === 'undefined') {
@@ -610,6 +609,8 @@ Page {
                 console.log("used[" + picked.row + "] is undef")
             }
 
+            if (typeof omit_used_reset === 'undefined' || !omit_used_reset)
+                Util.fill_2d_array(used, false)
             used[picked.row][picked.column] = true
             var queue = [picked]
             var qfront = 0
@@ -624,6 +625,7 @@ Page {
                     queue.push(to)
                 }
             }
+
             return queue
         }
 
@@ -650,7 +652,6 @@ Page {
                     || picked.to_evolve
                     || picked.floating)
                 return
-            Util.fill_2d_array(used, false)
             pgroup = bfs(picked)
             for (var i in pgroup)
                 pgroup[i].floating = true
@@ -827,7 +828,6 @@ Page {
 
         function reselect() {
             // get newly picked boxes
-            Util.fill_2d_array(used, false)
             var updated_group = bfs(pgroup[0])
             // release the boxes of the difference
             for (var i in pgroup) {
@@ -840,65 +840,101 @@ Page {
             pgroup = updated_group
         }
 
-        /* 1. Search at each step for boxes, that should fall at least 1 level down
-         * and drop them 1 unit down exactly.
-         * 2. Works with virtual coordinates.
+        function mark_occupation(occupied, x, y) {
+            var r = coordinate_to_grid(y)
+            var c = coordinate_to_grid(x)
+            if (0 <= r && r < occupied.length) {
+                if (0 <= c && c < occupied[r].length)
+                    occupied[r][c] = true
+            }
+        }
+
+        /**
+         * 1. Mark all boxes that should stay
+         * 2. Drop one level down all remaining boxes
+         *
+         * * Note: method works with virtual coordinates.
          */
         function gravitate() {
-            /* to collect falling boxes */
-            var fgroup = []
-            Util.fill_2d_array(used, false)
-            // freeing: element is set to true if the corresponding box is to be dropped
-            var freeing = Util.make_2d_array(kAreaRows, kAreaColumns)
-            Util.fill_2d_array(freeing, false)
+            var occupied = Util.make_2d_array(kAreaRows, kAreaColumns)
+            Util.fill_2d_array(occupied, false)
+            for (var i in pgroup) {
+                var b = pgroup[i]
+                var top_left = b.get_virtual()
+                mark_occupation(occupied, top_left.x, top_left.y)
+                mark_occupation(occupied, top_left.x, top_left.y + box_size)
+                mark_occupation(occupied, top_left.x + box_size, top_left.y)
+                mark_occupation(occupied, top_left.x + box_size, top_left.y + box_size)
+            }
 
-            for (var r = kAreaRows - 1; r >= 0; --r) {
-                for (var c = 0; c < kAreaColumns; ++c) {
-                    var box = boxes[r][c]
-                    if (typeof box === 'undefined'
-                            || used[r][c]
-                            || box.floating
-                            || box.to_evolve)
-                        continue
-                    var group = bfs(box)
-                    // flag of whether could the group be dropped 1 unit down
-                    var flag = true
-                    for (var i in group) {
-                        var b = group[i]
-                        if (b.adjacent[Logic.kBottom])
-                            continue
-                        var next_row = b.row + 1
-                        if (next_row >= kAreaRows) {
-                            flag = false
-                            break
-                        }
-                        var under = boxes[next_row][b.column]
-                        if (!freeing[next_row][b.column]
-                                && typeof under !== 'undefined'
-                                && (under.to_evolve || under.get_digit() !== b.get_digit())) {
-                            flag = false
-                            break
-                        }
-                    }
-                    if (flag) {
-                        fgroup = fgroup.concat(group)
-                        for (var i in group) {
-                            var b = group[i]
-                            freeing[b.row][b.column] = true
-                        }
+            var stationary = Util.make_2d_array(kAreaRows, kAreaColumns)
+            Util.fill_2d_array(stationary, false)
+            var queue = []
+            var qfront = 0
+
+            var marked = []
+            var mark_stationary = function(b) {
+                if (typeof b === 'undefined')
+                    return
+                var group = bfs(b)
+                for (var i in group) {
+                    var t = group[i]
+                    if (t.row < kAreaRows && !stationary[t.row][t.column]) {
+                        marked.push(t.digit)
+                        stationary[t.row][t.column] = true
+                        queue.push(t)
                     }
                 }
             }
+
+            for (var r = 0; r < kAreaRows; ++r) {
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box === 'undefined') {
+                        if (occupied[r][c] && r - 1 >= 0)
+                            mark_stationary(boxes[r - 1][c])
+                        continue
+                    }
+                    if (r + 1 >= kAreaRows || box.floating || box.to_evolve) {
+                        mark_stationary(boxes[r][c])
+                    }
+                }
+            }
+
+            // go through queue
+            qfront = 0
+            while (qfront < queue.length) {
+                var box = queue[qfront]
+                ++qfront
+                if (box.row <= 0)
+                    continue
+                var above = boxes[box.row - 1][box.column]
+                if (typeof above === 'undefined'
+                        || stationary[box.row - 1][box.column]
+                        || above.digit === box.digit)
+                    continue
+                mark_stationary(above)
+            }
+            /* collect falling boxes */
+            var falling = []
+            for (var r = 0; r < kAreaRows; ++r)
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box === 'undefined' || stationary[r][c])
+                        continue
+                    falling.push(box)
+                }
+
             // unbind all falling
-            for (var i in fgroup) {
-                var box = fgroup[i]
+            for (var i in falling) {
+                var box = falling[i]
                 unbind_from_grid(box)
             }
             // and bind them lower
             var lost = false // impact on pgroup
             var merged = false // flag if any merge happened
-            for (var i in fgroup) {
-                var box = fgroup[i]
+            for (var i in falling) {
+                var box = falling[i]
                 var row = box.row + 1
                 var column = box.column
                 if (align_with_grid(box, row, column, 1))
@@ -918,7 +954,7 @@ Page {
             }
             if (lost)
                 reselect()
-            if (fgroup.length > 0)
+            if (falling.length > 0)
                 send_start_gravity_timer()
             // check if spawn is required
             if (not_single < 1)
@@ -935,7 +971,10 @@ Page {
                 var box = pgroup[i]
                 if (typeof box === 'undefined')
                     continue
-                box.virtual_move_to(grid_line(box.column), grid_line(box.row), 0)
+                var cur_top = box.get_virtual().y
+                var offset = cur_top - grid_line(box.row)
+                var y = offset < box_spacing ? grid_line(box.row) : cur_top
+                box.virtual_move_to(grid_line(box.column), y, 0)
                 box.floating = false
             }
             pgroup = []
