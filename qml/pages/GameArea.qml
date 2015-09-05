@@ -213,19 +213,16 @@ Page {
         Rectangle {
             id: table
             anchors {
-                left: parent.left
-                leftMargin: Theme.paddingMedium
-                right: parent.right
-                rightMargin: Theme.paddingMedium
-                topMargin: Theme.paddingMedium
                 bottom: parent.bottom
                 bottomMargin: Theme.paddingLarge
+                horizontalCenter: parent.horizontalCenter
             }
             clip: true
             color: "#eff6bc"
-            radius: height / 50
 
-            height: 8 * width / 7
+            width: Logic.calculateAreaWidth(kAreaColumns, parent.width - Theme.paddingLarge)
+            height: Logic.calculateAreaHeight(kAreaRows, kAreaColumns, width)
+            radius: height / 50
 
             MouseArea {
                 id: touch
@@ -1002,11 +999,9 @@ Page {
             max_number = 0
             score = 0
 
-            var hsize = table.width / kAreaColumns
-            var vsize = table.height / kAreaRows
-            box_total_size = Math.floor(Math.min(hsize, vsize))
-            box_spacing = box_total_size / 8
-            box_size = box_total_size - box_spacing
+            box_spacing = Logic.calculateBoxSpacing(kAreaColumns, table.width)
+            box_size = Logic.calcuateBoxSize(box_spacing)
+            box_total_size = box_size + box_spacing
             box_half_size = box_size / 2
             lift_offset = 0
             // init the lift rungs
