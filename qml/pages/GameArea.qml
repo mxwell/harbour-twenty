@@ -33,6 +33,7 @@ Page {
                 && table.game_state !== Logic.kGameStatePaused) {
             console.log("ERROR: launch game when state is " + table.game_state)
         }
+        game.reveal()
         table.opacity = 1
         touch.enabled = true
         pause.toggle_view(true)
@@ -49,6 +50,7 @@ Page {
         spawn_timer.stop()
         touch.enabled = false
         table.opacity = 0.25
+        game.conceal()
         pause.toggle_view(false)
         table.game_state = Logic.kGameStatePaused
     }
@@ -358,6 +360,27 @@ Page {
             game.send_touch_move.connect(add_task_move)
             game.send_touch_release.connect(add_task_release)
             game.send_evolve.connect(add_task_evolve)
+        }
+
+        function apply_to_all_boxes(func) {
+            for (var r = 0; r <= kAreaRows; ++r)
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box !== 'undefined')
+                        func(box)
+                }
+        }
+
+        function conceal() {
+            apply_to_all_boxes(function(b) {
+                b.conceal()
+            })
+        }
+
+        function reveal() {
+            apply_to_all_boxes(function(b) {
+                b.reveal()
+            })
         }
 
         // add to task queue, and execute it immediately if idle
@@ -981,16 +1004,10 @@ Page {
 
         function layout() {
             // destroy all previously existing boxes
-            if (typeof boxes !== 'undefined') {
-                for (var r = 0; r <= kAreaRows; ++r) {
-                    for (var c = 0; c < kAreaColumns; ++c) {
-                        if (typeof boxes[r][c] !== 'undefined') {
-                            boxes[r][c].destroy()
-                            boxes[r][c] = undefined
-                        }
-                    }
-                }
-            }
+            if (typeof boxes !== 'undefined')
+                apply_to_all_boxes(function(b) {
+                    b.destroy()
+                })
 
             boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             used = Util.make_2d_array(kAreaRows + 1, kAreaColumns)

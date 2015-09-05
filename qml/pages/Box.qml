@@ -47,6 +47,15 @@ Rectangle {
         label.color = Logic.text_colors[(d - 1) % Logic.text_colors.length]
     }
 
+    function conceal() {
+        label.text = ''
+        body.color = 'white'
+    }
+
+    function reveal() {
+        set_digit(digit)
+    }
+
     function set_to_evolve() {
         to_evolve = true
     }
