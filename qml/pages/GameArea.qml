@@ -452,6 +452,8 @@ Page {
             if (typeof boxes[r][c] !== 'undefined') {
                 if (boxes[r][c].get_digit() !== box.get_digit()) {
                     console.log("ERROR: losing box at " + r + "," + c + ": replace " + boxes[r][c].get_digit() + " with " + box.get_digit())
+                    // FIXME now game is continued, though stats are fixed
+                    rm_digit(boxes[r][c].get_digit())
                 } else if (boxes[r][c] === box) {
                     console.log("ERROR: the same")
                     return true
@@ -469,7 +471,6 @@ Page {
             }
             boxes[r][c] = box
             box.set_cell(r, c)
-            //console.log("bind " + box.digit + " at " + box.row + "," + box.column)
             return true
         }
 
@@ -900,7 +901,7 @@ Page {
                 for (var i in group) {
                     var t = group[i]
                     if (t.row < kAreaRows && !stationary[t.row][t.column]) {
-                        marked.push(t.digit)
+                        marked.push(t.get_digit())
                         stationary[t.row][t.column] = true
                         queue.push(t)
                     }
@@ -931,7 +932,7 @@ Page {
                 var above = boxes[box.row - 1][box.column]
                 if (typeof above === 'undefined'
                         || stationary[box.row - 1][box.column]
-                        || above.digit === box.digit)
+                        || above.get_digit() === box.get_digit())
                     continue
                 mark_stationary(above)
             }
