@@ -7,22 +7,29 @@ import "./Util.js" as Util
 Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
+    property bool zen_game: false
 
     function restart_progress() {
-        spawn_timer.stop()
-        game.start_lift()
+        if (!zen_game)
+            spawn_timer.stop()
+        game.add_task_start_scroll()
     }
 
-    function init_game() {
+    function init_game(zen_mode) {
         table.game_state = Logic.kGameStateNo
         game_over.visible = false
         restart_button.visible = false
+
+        zen_game = zen_mode
 
         spawn_timer.stop()
         progressBar.value = 0
         progressBar.visible = true
         table.opacity = 0.25
-        pause.toggle_view(false)
+        if (zen_game)
+            pause.visible = false
+        else
+            pause.toggle_view(false)
 
         game.layout()
         table.game_state = Logic.kGameStateCreated
@@ -33,15 +40,21 @@ Page {
                 && table.game_state !== Logic.kGameStatePaused) {
             console.log("ERROR: launch game when state is " + table.game_state)
         }
-        game.reveal()
         table.opacity = 1
         touch.enabled = true
         pause.toggle_view(true)
-        spawn_timer.start()
+        if (!zen_game) {
+            game.reveal()
+            spawn_timer.start()
+        }
         table.game_state = Logic.kGameStateStarted
     }
 
     function pause_game(check_state) {
+        if (zen_game) {
+            console.log("Warning: no pause in zen game")
+            return
+        }
         if (table.game_state !== Logic.kGameStateStarted) {
             if (check_state)
                 return
@@ -81,9 +94,17 @@ Page {
             }
 
             MenuItem {
-                text: qsTr("Restart")
+                text: qsTr("Zen mode game")
                 onClicked: {
-                    init_game()
+                    init_game(true)
+                    launch_game()
+                }
+            }
+
+            MenuItem {
+                text: qsTr("Timed mode game")
+                onClicked: {
+                    init_game(false)
                     launch_game()
                 }
             }
@@ -121,6 +142,8 @@ Page {
                     maximumValue: 8 * 15
 
                     function spawn_finish() {
+                        if (zen_game)
+                            return
                         value = 0
                         if (table.game_state === Logic.kGameStateStarted)
                             spawn_timer.restart()
@@ -151,7 +174,7 @@ Page {
                             var value = progressBar.value + 1
                             if (value === progressBar.maximumValue) {
                                 value = 0
-                                game.start_lift()
+                                game.add_task_start_scroll()
                             } else if (table.game_state === Logic.kGameStateStarted) {
                                 restart()
                             }
@@ -185,14 +208,21 @@ Page {
                     icon.source: "image://theme/icon-l-pause"
 
                     function toggle_view(playing) {
-                        if (playing)
-                            icon.source = "image://theme/icon-l-pause"
-                        else
+                        if (!playing) {
                             icon.source = "image://theme/icon-l-play"
+                        } else if (zen_game) {
+                            icon.source = "image://theme/icon-l-up"
+                        } else {
+                            icon.source = "image://theme/icon-l-pause"
+                        }
                         visible = true
                     }
 
                     onClicked: {
+                        if (zen_game) {
+                            game.add_task_start_scroll()
+                            return
+                        }
                         if (table.game_state === Logic.kGameStateStarted)
                             pause_game()
                         else
@@ -249,7 +279,7 @@ Page {
                 // one-time action
                 game.init()
 
-                init_game()
+                init_game(false)
             }
         }
 
@@ -285,7 +315,7 @@ Page {
                 visible: false
                 text: qsTr("New game")
                 onClicked: {
-                    init_game()
+                    init_game(zen_game)
                     launch_game()
                 }
 
@@ -323,6 +353,7 @@ Page {
         property double lift_offset: 0
         property var lift_rungs
         property int lift_pos: 0
+        property bool scroll_in_progress: false
 
         // group of picked boxes: it contains the boxes themselves
         property var pgroup: []
@@ -398,6 +429,10 @@ Page {
 
         function add_task_gravitate() {
             run_or_schedule(Util.make_task("gravitate", gravitate))
+        }
+
+        function add_task_start_scroll() {
+            run_or_schedule(Util.make_task("start_scroll", start_lift))
         }
 
         function add_task_scroll() {
@@ -480,6 +515,9 @@ Page {
         }
 
         function start_lift() {
+            if (scroll_in_progress)
+                return
+            scroll_in_progress = true
             add_row()
             lift_offset = 0
             lift_pos = 0
@@ -487,6 +525,8 @@ Page {
         }
 
         function lift_step() {
+            if (!scroll_in_progress)
+                return
             var ok = true
             if (lift_pos >= lift_rungs.length) {
                 // finish the lifting
@@ -505,6 +545,7 @@ Page {
                 lift_pos = 0
                 ++spawns
                 send_start_gravity_timer()
+                scroll_in_progress = false
                 // notify progress bar
                 send_spawn_end()
                 return
@@ -1029,13 +1070,14 @@ Page {
             for (var i = 0; i + 1 < steps_total; ++i)
                 lift_rungs.push(step)
             lift_rungs.push(box_total_size - (steps_total - 1) * step)
+            scroll_in_progress = false
 
             // init task queue
             task_queue = Util.queue_new()
             idle = true
 
             spawns = 0
-            start_lift()
+            game.add_task_start_scroll()
         }
     }
 }
