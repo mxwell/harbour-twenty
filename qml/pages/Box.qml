@@ -59,7 +59,6 @@ Rectangle {
 
     function set_to_evolve() {
         to_evolve = true
-        mack.play()
     }
 
     function evolve() {
@@ -302,5 +301,9 @@ Rectangle {
     SoundEffect {
         id: mack
         source: "qrc:///sound/mack.wav"
+    }
+
+    function make_sound() {
+        mack.play()
     }
 }

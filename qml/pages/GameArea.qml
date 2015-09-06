@@ -8,6 +8,7 @@ Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
     property bool zen_game: false
+    property bool sound_on: true
 
     function restart_progress() {
         if (!zen_game)
@@ -90,6 +91,17 @@ Page {
                     if (table.game_state === Logic.kGameStateStarted)
                         pause_game()
                     pageStack.push("AboutPage.qml")
+                }
+            }
+
+            MenuItem {
+                function label() {
+                    return sound_on ? qsTr("Sound off") : qsTr("Sound on")
+                }
+                text: label()
+                onClicked: {
+                    sound_on = !sound_on
+                    text = label()
                 }
             }
 
@@ -497,6 +509,8 @@ Page {
                 box.unbind_all()
                 var saved = boxes[r][c]
                 saved.unbind_all()
+                if (sound_on)
+                    saved.make_sound()
                 saved.set_to_evolve()
                 box.set_to_destroy(function() {
                     send_evolve(saved)

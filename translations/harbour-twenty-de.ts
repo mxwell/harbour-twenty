@@ -76,6 +76,14 @@
         <source>Timed mode game</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Sound off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sound on</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SecondPage</name>
