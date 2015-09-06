@@ -162,7 +162,6 @@ Page {
                     }
 
                     function spawn_fail() {
-                        console.log("spawn failed")
                         progressBar.visible = false
                         pause.visible = false
                         touch.enabled = false
@@ -541,15 +540,29 @@ Page {
         function lift_step() {
             if (!scroll_in_progress)
                 return
-            var ok = true
+
             if (lift_pos >= lift_rungs.length) {
+                // check the upper row
+                var ok = true
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[0][c]
+                    if (typeof box !== 'undefined') {
+                        if (box.floating) {
+                            for (var i in pgroup)
+                                pgroup[i].floating = false
+                            pgroup = []
+                        }
+                        box.destroy()
+                        boxes[0][c] = undefined
+                        ok = false
+                    }
+                }
                 // finish the lifting
                 for (var r = 1; r <= kAreaRows; ++r) {
                     for (var c = 0; c < kAreaColumns; ++c) {
                         var box = boxes[r][c]
                         if (typeof box === 'undefined')
                             continue
-                        //align_with_grid(box, r - 1, c, 2)
                         bind_to_grid(box, r - 1, c)
                         box.relax_diff()
                         boxes[r][c] = undefined
@@ -557,6 +570,12 @@ Page {
                 }
                 lift_offset = 0
                 lift_pos = 0
+                if (!ok) {
+                    console.log("Upper row isn't clear: game over")
+                    send_spawn_fail()
+                    return
+                }
+
                 ++spawns
                 send_start_gravity_timer()
                 scroll_in_progress = false
@@ -575,15 +594,7 @@ Page {
                     if (typeof box === 'undefined')
                         continue
                     box.set_phys_virt_diff(-lift_offset, 0)
-                    if (box.pos_y < kEps) {
-                        console.log("box " + box.get_digit() + " is out of the table")
-                        ok = false
-                    }
                 }
-            }
-            if (!ok) {
-                send_spawn_fail()
-                return
             }
             if (pgroup.length > 0)
                 send_touch_move(touch_x, touch_y)
@@ -789,7 +800,7 @@ Page {
                     var cur_center = center_of_box(pgroup[i])
                     var cur_next = Util.point_sum(cur_center, move)
                     cur_next.x = Math.min(Math.max(cur_next.x, box_half_size + kEps), table.width - kEps - box_half_size)
-                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps), table.height - kEps - box_half_size)
+                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps + lift_offset), table.height - kEps - box_half_size)
                     move = Util.point_diff(cur_next, cur_center)
                 }
 
@@ -869,6 +880,15 @@ Page {
                 // Check if there is any effect
                 if (move_too_small(move))
                     break
+                // check for walls
+                for (var i in pgroup) {
+                    var next = Util.point_sum(center_of_box(pgroup[i]), move)
+                    if (!(box_half_size < next.x && next.x < table.width - box_half_size)
+                            || !(box_half_size + lift_offset < next.y && next.y < table.height - box_half_size)) {
+                        console.log("intersection with walls")
+                        return
+                    }
+                }
                 // Check if boxes are moved out of their current cells
                 var row_add = coordinate_to_grid(center.y + move.y) - coordinate_to_grid(center.y)
                 var column_add = coordinate_to_grid(center.x + move.x) - coordinate_to_grid(center.x)
