@@ -20,7 +20,7 @@ Dialog {
             spacing: Theme.paddingLarge
 
             DialogHeader {
-                title: "Twenty (for Jolla) v0.1"
+                title: "Twenty (for Jolla) v0.2"
                 anchors.horizontalCenter: parent.horizontalCenter
                 acceptText: ""
                 cancelText: qsTr("Close")
