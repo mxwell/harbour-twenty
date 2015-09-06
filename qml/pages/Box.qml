@@ -1,5 +1,6 @@
 import QtQuick 2.1
 import QtQuick.Particles 2.0
+import QtMultimedia 5.0
 import Sailfish.Silica 1.0
 import "./Logic.js" as Logic
 import "./Util.js" as Util
@@ -58,6 +59,7 @@ Rectangle {
 
     function set_to_evolve() {
         to_evolve = true
+        mack.play()
     }
 
     function evolve() {
@@ -295,5 +297,10 @@ Rectangle {
             if (!running)
                 self_destroy()
         }
+    }
+
+    SoundEffect {
+        id: mack
+        source: "qrc:///sound/mack.wav"
     }
 }

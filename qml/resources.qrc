@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
         <file>img/particle-brick.png</file>
+        <file>sound/mack.wav</file>
     </qresource>
 </RCC>

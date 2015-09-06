@@ -25,7 +25,7 @@ var kGameStateCreated   = 1
 var kGameStateStarted   = 2
 var kGameStatePaused    = 3
 
-var kGravityDelay   = 55 /* ms */
+var kGravityDelay   = 60 /* ms */
 
 /* ratio of box side to spacing */
 var kRatio = 8
