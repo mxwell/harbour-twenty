@@ -639,13 +639,13 @@ Page {
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].get_digit()
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
-                var digit = Util.generate_number(Math.min(4 + spawns / 5, Logic.kMaxBoxNumber - 1), upper)
+                var digit = Util.generate_number(Math.min(Math.floor(4 + spawns / 5), Logic.kMaxBoxNumber - 1), upper)
                 b.set_digit(digit)
                 add_digit(digit)
                 align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
-            var max_bindings = Math.min(spawns / 7, binding_slots - 5)
+            var max_bindings = Math.min(Math.floor(spawns / 7), binding_slots - 5)
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
