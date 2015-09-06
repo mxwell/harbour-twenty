@@ -42,15 +42,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Restart</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Game over</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>New game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Zen mode game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Timed mode game</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sound off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sound on</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

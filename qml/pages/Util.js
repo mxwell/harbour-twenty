@@ -49,7 +49,7 @@ function find_collision(a, b, size) {
 
 function generate_number(right_bound, forbidden) {
     while (true) {
-        var num = Math.min(Math.floor(1 + Math.random() * right_bound), 19)
+        var num = Math.min(Math.floor(1 + Math.random() * right_bound), right_bound)
         if (num !== forbidden) {
             return num
         }

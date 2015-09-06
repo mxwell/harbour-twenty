@@ -1,5 +1,6 @@
 import QtQuick 2.1
 import QtQuick.Particles 2.0
+import QtMultimedia 5.0
 import Sailfish.Silica 1.0
 import "./Logic.js" as Logic
 import "./Util.js" as Util
@@ -45,6 +46,15 @@ Rectangle {
         label.text = String(d)
         body.color = Logic.body_colors[(d - 1) % Logic.body_colors.length]
         label.color = Logic.text_colors[(d - 1) % Logic.text_colors.length]
+    }
+
+    function conceal() {
+        label.text = ''
+        body.color = 'white'
+    }
+
+    function reveal() {
+        set_digit(digit)
     }
 
     function set_to_evolve() {
@@ -145,10 +155,7 @@ Rectangle {
     function set_to_destroy(callback) {
         destroy_callback = callback
         to_be_destroyed = true
-        shutdown_timer.start()
-        // try destroy immediately
-        if (!x_animation.running && !y_animation.running && !smoke_timer.running)
-            self_destroy()
+        destroy_timer.start()
     }
 
     function make_smoke() {
@@ -241,8 +248,6 @@ Rectangle {
                     particle_system.pause()
                     particle_system.reset()
                     particle_system.stop()
-                    if (root.to_be_destroyed && !running && !y_animation.running && !x_animation.running)
-                        self_destroy()
                 }
             }
         }
@@ -271,35 +276,34 @@ Rectangle {
     Behavior on y {
         NumberAnimation {
             id: y_animation
+            duration: 0
             easing.type: Easing.OutQuad
-            onRunningChanged: {
-                if (root.to_be_destroyed && !x_animation.running && !y_animation.running && !smoke_timer.running)
-                    self_destroy()
-            }
         }
     }
     Behavior on x {
         NumberAnimation {
             id: x_animation
+            duration: 0
             easing.type: Easing.OutQuad
-            onRunningChanged: {
-                if (root.to_be_destroyed && !x_animation.running && !y_animation.running && !smoke_timer.running)
-                    self_destroy()
-            }
         }
     }
 
-    // Workaround: timer will destroy object,
-    // if it wasn't destroyed upon animation finish (probably because interrupted animation)
     Timer {
-        id: shutdown_timer
-        interval: 1000  /* 1 second */
+        id: destroy_timer
+        interval: Logic.kGravityDelay
         running: false
         onTriggered: {
-            if (!running && to_be_destroyed) {
-                console.log("ERROR: this timer must not be triggered")
+            if (!running)
                 self_destroy()
-            }
         }
+    }
+
+    SoundEffect {
+        id: mack
+        source: "qrc:///sound/mack.wav"
+    }
+
+    function make_sound() {
+        mack.play()
     }
 }

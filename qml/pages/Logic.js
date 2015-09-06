@@ -24,3 +24,27 @@ var kGameStateNo        = 0
 var kGameStateCreated   = 1
 var kGameStateStarted   = 2
 var kGameStatePaused    = 3
+
+var kGravityDelay   = 60 /* ms */
+
+/* ratio of box side to spacing */
+var kRatio = 8
+
+var calculateAreaWidth = function(cols, upperLimit) {
+    var spacing = Math.ceil(upperLimit / (cols * kRatio + cols + 1))
+    while (spacing * (cols * kRatio + cols + 1) > upperLimit)
+        --spacing
+    return spacing * (cols * kRatio + cols + 1)
+}
+
+var calculateAreaHeight = function(rows, cols, width) {
+    return Math.ceil((rows * kRatio + rows + 1) * width / (cols * kRatio + cols + 1))
+}
+
+var calcuateBoxSize = function(spacing) {
+    return spacing * kRatio
+}
+
+var calculateBoxSpacing = function(cols, area_width) {
+    return area_width / (cols * kRatio + cols + 1)
+}

@@ -7,22 +7,30 @@ import "./Util.js" as Util
 Page {
     property int kAreaRows: 8
     property int kAreaColumns: 7
+    property bool zen_game: false
+    property bool sound_on: true
 
     function restart_progress() {
-        spawn_timer.stop()
-        game.start_lift()
+        if (!zen_game)
+            spawn_timer.stop()
+        game.add_task_start_scroll()
     }
 
-    function init_game() {
+    function init_game(zen_mode) {
         table.game_state = Logic.kGameStateNo
         game_over.visible = false
         restart_button.visible = false
+
+        zen_game = zen_mode
 
         spawn_timer.stop()
         progressBar.value = 0
         progressBar.visible = true
         table.opacity = 0.25
-        pause.toggle_view(false)
+        if (zen_game)
+            pause.visible = false
+        else
+            pause.toggle_view(false)
 
         game.layout()
         table.game_state = Logic.kGameStateCreated
@@ -36,11 +44,18 @@ Page {
         table.opacity = 1
         touch.enabled = true
         pause.toggle_view(true)
-        spawn_timer.start()
+        if (!zen_game) {
+            game.reveal()
+            spawn_timer.start()
+        }
         table.game_state = Logic.kGameStateStarted
     }
 
     function pause_game(check_state) {
+        if (zen_game) {
+            console.log("Warning: no pause in zen game")
+            return
+        }
         if (table.game_state !== Logic.kGameStateStarted) {
             if (check_state)
                 return
@@ -49,6 +64,7 @@ Page {
         spawn_timer.stop()
         touch.enabled = false
         table.opacity = 0.25
+        game.conceal()
         pause.toggle_view(false)
         table.game_state = Logic.kGameStatePaused
     }
@@ -79,9 +95,28 @@ Page {
             }
 
             MenuItem {
-                text: qsTr("Restart")
+                function label() {
+                    return sound_on ? qsTr("Sound off") : qsTr("Sound on")
+                }
+                text: label()
                 onClicked: {
-                    init_game()
+                    sound_on = !sound_on
+                    text = label()
+                }
+            }
+
+            MenuItem {
+                text: qsTr("Zen mode game")
+                onClicked: {
+                    init_game(true)
+                    launch_game()
+                }
+            }
+
+            MenuItem {
+                text: qsTr("Timed mode game")
+                onClicked: {
+                    init_game(false)
                     launch_game()
                 }
             }
@@ -119,13 +154,14 @@ Page {
                     maximumValue: 8 * 15
 
                     function spawn_finish() {
+                        if (zen_game)
+                            return
                         value = 0
                         if (table.game_state === Logic.kGameStateStarted)
                             spawn_timer.restart()
                     }
 
                     function spawn_fail() {
-                        console.log("spawn failed")
                         progressBar.visible = false
                         pause.visible = false
                         touch.enabled = false
@@ -149,13 +185,32 @@ Page {
                             var value = progressBar.value + 1
                             if (value === progressBar.maximumValue) {
                                 value = 0
-                                game.start_lift()
+                                game.add_task_start_scroll()
                             } else if (table.game_state === Logic.kGameStateStarted) {
                                 restart()
                             }
                             progressBar.value = value
                         }
                         running: false
+                    }
+
+                    Timer {
+                        id: scroll_timer
+                        interval: 50
+                        repeat: false
+                        onTriggered: game.add_task_scroll()
+                    }
+
+                    Timer {
+                        id: gravity_timer
+                        interval: Logic.kGravityDelay
+                        repeat: false
+
+                        function start_if_stopped() {
+                            if (!running)
+                                start()
+                        }
+                        onTriggered: game.add_task_gravitate()
                     }
                 }
 
@@ -164,14 +219,21 @@ Page {
                     icon.source: "image://theme/icon-l-pause"
 
                     function toggle_view(playing) {
-                        if (playing)
-                            icon.source = "image://theme/icon-l-pause"
-                        else
+                        if (!playing) {
                             icon.source = "image://theme/icon-l-play"
+                        } else if (zen_game) {
+                            icon.source = "image://theme/icon-l-up"
+                        } else {
+                            icon.source = "image://theme/icon-l-pause"
+                        }
                         visible = true
                     }
 
                     onClicked: {
+                        if (zen_game) {
+                            game.add_task_start_scroll()
+                            return
+                        }
                         if (table.game_state === Logic.kGameStateStarted)
                             pause_game()
                         else
@@ -194,19 +256,16 @@ Page {
         Rectangle {
             id: table
             anchors {
-                left: parent.left
-                leftMargin: Theme.paddingMedium
-                right: parent.right
-                rightMargin: Theme.paddingMedium
-                topMargin: Theme.paddingMedium
                 bottom: parent.bottom
                 bottomMargin: Theme.paddingLarge
+                horizontalCenter: parent.horizontalCenter
             }
             clip: true
             color: "#eff6bc"
-            radius: height / 50
 
-            height: 8 * width / 7
+            width: Logic.calculateAreaWidth(kAreaColumns, parent.width - Theme.paddingLarge)
+            height: Logic.calculateAreaHeight(kAreaRows, kAreaColumns, width)
+            radius: height / 50
 
             MouseArea {
                 id: touch
@@ -224,12 +283,14 @@ Page {
                 game.send_score_change.connect(update_score)
                 game.send_spawn_end.connect(progressBar.spawn_finish)
                 game.send_spawn_fail.connect(progressBar.spawn_fail)
+                game.send_start_scroll_timer.connect(scroll_timer.start)
+                game.send_start_gravity_timer.connect(gravity_timer.start_if_stopped)
 
                 game.box_component = Qt.createComponent("Box.qml")
                 // one-time action
                 game.init()
 
-                init_game()
+                init_game(false)
             }
         }
 
@@ -265,7 +326,7 @@ Page {
                 visible: false
                 text: qsTr("New game")
                 onClicked: {
-                    init_game()
+                    init_game(zen_game)
                     launch_game()
                 }
 
@@ -303,6 +364,7 @@ Page {
         property double lift_offset: 0
         property var lift_rungs
         property int lift_pos: 0
+        property bool scroll_in_progress: false
 
         // group of picked boxes: it contains the boxes themselves
         property var pgroup: []
@@ -318,6 +380,8 @@ Page {
         signal send_spawn_end()
         signal send_spawn_fail()
         signal send_score_change()
+        signal send_start_scroll_timer()
+        signal send_start_gravity_timer()
 
         /*** Task queue ***/
         property var task_queue
@@ -340,6 +404,27 @@ Page {
             game.send_evolve.connect(add_task_evolve)
         }
 
+        function apply_to_all_boxes(func) {
+            for (var r = 0; r <= kAreaRows; ++r)
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box !== 'undefined')
+                        func(box)
+                }
+        }
+
+        function conceal() {
+            apply_to_all_boxes(function(b) {
+                b.conceal()
+            })
+        }
+
+        function reveal() {
+            apply_to_all_boxes(function(b) {
+                b.reveal()
+            })
+        }
+
         // add to task queue, and execute it immediately if idle
         function run_or_schedule(task) {
             Util.queue_push(task_queue, task)
@@ -355,6 +440,10 @@ Page {
 
         function add_task_gravitate() {
             run_or_schedule(Util.make_task("gravitate", gravitate))
+        }
+
+        function add_task_start_scroll() {
+            run_or_schedule(Util.make_task("start_scroll", start_lift))
         }
 
         function add_task_scroll() {
@@ -396,7 +485,7 @@ Page {
                 } else {
                     console.log("ERROR: saved box is lost")
                 }
-                send_gravitate()
+                send_start_gravity_timer()
             }))
         }
 
@@ -409,6 +498,8 @@ Page {
             if (typeof boxes[r][c] !== 'undefined') {
                 if (boxes[r][c].get_digit() !== box.get_digit()) {
                     console.log("ERROR: losing box at " + r + "," + c + ": replace " + boxes[r][c].get_digit() + " with " + box.get_digit())
+                    // FIXME now game is continued, though stats are fixed
+                    rm_digit(boxes[r][c].get_digit())
                 } else if (boxes[r][c] === box) {
                     console.log("ERROR: the same")
                     return true
@@ -417,16 +508,17 @@ Page {
                 box.unbind_all()
                 var saved = boxes[r][c]
                 saved.unbind_all()
+                if (sound_on)
+                    saved.make_sound()
                 saved.set_to_evolve()
-
                 box.set_to_destroy(function() {
                     send_evolve(saved)
                 })
+
                 return false
             }
             boxes[r][c] = box
             box.set_cell(r, c)
-            //console.log("bind " + box.digit + " at " + box.row + "," + box.column)
             return true
         }
 
@@ -436,24 +528,41 @@ Page {
         }
 
         function start_lift() {
+            if (scroll_in_progress)
+                return
+            scroll_in_progress = true
             add_row()
             lift_offset = 0
             lift_pos = 0
             send_scroll()
         }
 
-        // move existing rows up: return true if no boxes should be destroyed for the move,
-        //  otherwise return false and don't move
         function lift_step() {
-            var ok = true
+            if (!scroll_in_progress)
+                return
+
             if (lift_pos >= lift_rungs.length) {
+                // check the upper row
+                var ok = true
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[0][c]
+                    if (typeof box !== 'undefined') {
+                        if (box.floating) {
+                            for (var i in pgroup)
+                                pgroup[i].floating = false
+                            pgroup = []
+                        }
+                        box.destroy()
+                        boxes[0][c] = undefined
+                        ok = false
+                    }
+                }
                 // finish the lifting
                 for (var r = 1; r <= kAreaRows; ++r) {
                     for (var c = 0; c < kAreaColumns; ++c) {
                         var box = boxes[r][c]
                         if (typeof box === 'undefined')
                             continue
-                        //align_with_grid(box, r - 1, c, 2)
                         bind_to_grid(box, r - 1, c)
                         box.relax_diff()
                         boxes[r][c] = undefined
@@ -461,8 +570,16 @@ Page {
                 }
                 lift_offset = 0
                 lift_pos = 0
+                if (!ok) {
+                    console.log("Upper row isn't clear: game over")
+                    send_spawn_fail()
+                    return
+                }
+
                 ++spawns
-                send_gravitate()
+                send_start_gravity_timer()
+                scroll_in_progress = false
+                // notify progress bar
                 send_spawn_end()
                 return
             }
@@ -477,20 +594,11 @@ Page {
                     if (typeof box === 'undefined')
                         continue
                     box.set_phys_virt_diff(-lift_offset, 0)
-                    if (box.pos_y < kEps) {
-                        console.log("box " + box.get_digit() + " is out of the table")
-                        ok = false
-                    }
                 }
-            }
-            if (!ok) {
-                send_spawn_fail()
-                return
             }
             if (pgroup.length > 0)
                 send_touch_move(touch_x, touch_y)
-                //move_to(touch_x, touch_y + lift_offset)
-            send_scroll()
+            send_start_scroll_timer()
         }
 
         function grid_line(line_id) {
@@ -531,13 +639,13 @@ Page {
                 if (typeof boxes[r - 1][c] !== 'undefined')
                     upper = boxes[r - 1][c].get_digit()
                 var b = box_component.createObject(table, { width: box_total_size, box_spacing: box_spacing })
-                var digit = Util.generate_number(Math.min(4 + spawns / 4, Logic.kMaxBoxNumber - 1), upper)
+                var digit = Util.generate_number(Math.min(4 + spawns / 5, Logic.kMaxBoxNumber - 1), upper)
                 b.set_digit(digit)
                 add_digit(digit)
                 align_with_grid(b, r, c, 2)
             }
             var binding_slots = kAreaColumns * 2 - 1
-            var max_bindings = Math.min(spawns / 8, binding_slots - 5)
+            var max_bindings = Math.min(spawns / 7, binding_slots - 5)
             var prob = max_bindings / binding_slots
             var bindings = 0
             // bind to the right
@@ -567,9 +675,8 @@ Page {
                     continue
                 // Calculate sizes of components, connected to @box and @above,
                 // to not exceed limit for component size
-                Util.fill_2d_array(used, false)
                 var box_group = bfs(box)
-                var above_group = bfs(above)
+                var above_group = bfs(above, true)
                 if (box_group.length + above_group.length > kAreaColumns - 2)
                     continue
                 ++bindings
@@ -579,7 +686,7 @@ Page {
         }
 
         // return array with all boxes connected to @picked
-        function bfs(picked) {
+        function bfs(picked, omit_used_reset) {
             if (typeof picked === 'undefined')
                 return []
             if (typeof picked.row === 'undefined' || typeof picked.column === 'undefined') {
@@ -589,6 +696,8 @@ Page {
                 console.log("used[" + picked.row + "] is undef")
             }
 
+            if (typeof omit_used_reset === 'undefined' || !omit_used_reset)
+                Util.fill_2d_array(used, false)
             used[picked.row][picked.column] = true
             var queue = [picked]
             var qfront = 0
@@ -603,6 +712,7 @@ Page {
                     queue.push(to)
                 }
             }
+
             return queue
         }
 
@@ -620,7 +730,7 @@ Page {
             var column = coordinate_to_grid(x)
             var row = coordinate_to_grid(y)
             if (0 > column || column >= kAreaColumns
-                  || 0 > row && row >= kAreaRows) {
+                  || 0 > row || row >= kAreaRows) {
                 return
             }
             var picked = boxes[row][column]
@@ -629,7 +739,6 @@ Page {
                     || picked.to_evolve
                     || picked.floating)
                 return
-            Util.fill_2d_array(used, false)
             pgroup = bfs(picked)
             for (var i in pgroup)
                 pgroup[i].floating = true
@@ -691,7 +800,7 @@ Page {
                     var cur_center = center_of_box(pgroup[i])
                     var cur_next = Util.point_sum(cur_center, move)
                     cur_next.x = Math.min(Math.max(cur_next.x, box_half_size + kEps), table.width - kEps - box_half_size)
-                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps), table.height - kEps - box_half_size)
+                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps + lift_offset), table.height - kEps - box_half_size)
                     move = Util.point_diff(cur_next, cur_center)
                 }
 
@@ -771,6 +880,15 @@ Page {
                 // Check if there is any effect
                 if (move_too_small(move))
                     break
+                // check for walls
+                for (var i in pgroup) {
+                    var next = Util.point_sum(center_of_box(pgroup[i]), move)
+                    if (!(box_half_size < next.x && next.x < table.width - box_half_size)
+                            || !(box_half_size + lift_offset < next.y && next.y < table.height - box_half_size)) {
+                        console.log("intersection with walls")
+                        return
+                    }
+                }
                 // Check if boxes are moved out of their current cells
                 var row_add = coordinate_to_grid(center.y + move.y) - coordinate_to_grid(center.y)
                 var column_add = coordinate_to_grid(center.x + move.x) - coordinate_to_grid(center.x)
@@ -799,14 +917,13 @@ Page {
                     } else if (lost) {
                         reselect()
                     }
-                    gravitate()
+                    send_start_gravity_timer()
                 }
             }
         }
 
         function reselect() {
             // get newly picked boxes
-            Util.fill_2d_array(used, false)
             var updated_group = bfs(pgroup[0])
             // release the boxes of the difference
             for (var i in pgroup) {
@@ -819,72 +936,122 @@ Page {
             pgroup = updated_group
         }
 
-        /* 1. Search at each step for boxes, that should fall at least 1 level down
-         * and drop them 1 unit down exactly.
-         * 2. Works with virtual coordinates.
+        function mark_occupation(occupied, x, y) {
+            var r = coordinate_to_grid(y)
+            var c = coordinate_to_grid(x)
+            if (0 <= r && r < occupied.length) {
+                if (0 <= c && c < occupied[r].length)
+                    occupied[r][c] = true
+            }
+        }
+
+        /**
+         * 1. Mark all boxes that should stay
+         * 2. Drop one level down all remaining boxes
+         *
+         * * Note: method works with virtual coordinates.
          */
         function gravitate() {
-            /* boxes falling at this step */
-            var fgroup
+            var occupied = Util.make_2d_array(kAreaRows, kAreaColumns)
+            Util.fill_2d_array(occupied, false)
+            for (var i in pgroup) {
+                var b = pgroup[i]
+                var top_left = b.get_virtual()
+                mark_occupation(occupied, top_left.x, top_left.y)
+                mark_occupation(occupied, top_left.x, top_left.y + box_size)
+                mark_occupation(occupied, top_left.x + box_size, top_left.y)
+                mark_occupation(occupied, top_left.x + box_size, top_left.y + box_size)
+            }
 
-            do {
-                fgroup = []
-                Util.fill_2d_array(used, false)
-                for (var r = 0; r < kAreaRows; ++r) {
-                    for (var c = 0; c < kAreaColumns; ++c) {
-                        var box = boxes[r][c]
-                        if (typeof box === 'undefined'
-                                || used[r][c]
-                                || box.floating
-                                || box.to_evolve)
-                            continue
-                        var group = bfs(box)
-                        // flag of whether could the group be dropped 1 unit down
-                        var flag = true
-                        for (var i in group) {
-                            var b = group[i]
-                            if (b.adjacent[Logic.kBottom])
-                                continue
-                            var next_row = b.row + 1
-                            if (next_row >= kAreaRows) {
-                                flag = false
-                                break
-                            }
-                            var under = boxes[next_row][b.column]
-                            if (typeof under !== 'undefined' && (under.to_evolve || under.get_digit() !== b.get_digit())) {
-                                flag = false
-                                break
-                            }
-                        }
-                        if (flag)
-                            fgroup = fgroup.concat(group)
+            var stationary = Util.make_2d_array(kAreaRows, kAreaColumns)
+            Util.fill_2d_array(stationary, false)
+            var queue = []
+            var qfront = 0
+
+            var marked = []
+            var mark_stationary = function(b) {
+                if (typeof b === 'undefined')
+                    return
+                var group = bfs(b)
+                for (var i in group) {
+                    var t = group[i]
+                    if (t.row < kAreaRows && !stationary[t.row][t.column]) {
+                        marked.push(t.get_digit())
+                        stationary[t.row][t.column] = true
+                        queue.push(t)
                     }
                 }
-                // unbind all falling
-                for (var i in fgroup) {
-                    var box = fgroup[i]
-                    unbind_from_grid(box)
-                }
-                // and bind them lower
-                var lost = false // impact on pgroup
-                for (var i in fgroup) {
-                    var box = fgroup[i]
-                    var row = box.row + 1
-                    var column = box.column
-                    if (!align_with_grid(box, row, column, 0) && boxes[row][column].floating) {
-                        var id = pgroup.indexOf(boxes[row][column])
-                        if (id >= 0) {
-                            var p = pgroup[id]
-                            p.virtual_move_to(grid_line(p.column), grid_line(p.row), 0)
-                            p.floating = false
-                            pgroup[id] = undefined
-                            lost = true
-                        }
+            }
+
+            for (var r = 0; r < kAreaRows; ++r) {
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box === 'undefined') {
+                        if (occupied[r][c] && r - 1 >= 0)
+                            mark_stationary(boxes[r - 1][c])
+                        continue
+                    }
+                    if (r + 1 >= kAreaRows || box.floating || box.to_evolve) {
+                        mark_stationary(boxes[r][c])
                     }
                 }
-                if (lost)
-                    reselect()
-            } while (fgroup.length > 0)
+            }
+
+            // go through queue
+            qfront = 0
+            while (qfront < queue.length) {
+                var box = queue[qfront]
+                ++qfront
+                if (box.row <= 0)
+                    continue
+                var above = boxes[box.row - 1][box.column]
+                if (typeof above === 'undefined'
+                        || stationary[box.row - 1][box.column]
+                        || above.get_digit() === box.get_digit())
+                    continue
+                mark_stationary(above)
+            }
+            /* collect falling boxes */
+            var falling = []
+            for (var r = 0; r < kAreaRows; ++r)
+                for (var c = 0; c < kAreaColumns; ++c) {
+                    var box = boxes[r][c]
+                    if (typeof box === 'undefined' || stationary[r][c])
+                        continue
+                    falling.push(box)
+                }
+
+            // unbind all falling
+            for (var i in falling) {
+                var box = falling[i]
+                unbind_from_grid(box)
+            }
+            // and bind them lower
+            var lost = false // impact on pgroup
+            var merged = false // flag if any merge happened
+            for (var i in falling) {
+                var box = falling[i]
+                var row = box.row + 1
+                var column = box.column
+                if (align_with_grid(box, row, column, 1))
+                    continue
+                merged = true
+                if (boxes[row][column].floating) {
+                    merged = true
+                    var id = pgroup.indexOf(boxes[row][column])
+                    if (id >= 0) {
+                        var p = pgroup[id]
+                        p.virtual_move_to(grid_line(p.column), grid_line(p.row), 1)
+                        p.floating = false
+                        pgroup[id] = undefined
+                        lost = true
+                    }
+                }
+            }
+            if (lost)
+                reselect()
+            if (falling.length > 0)
+                send_start_gravity_timer()
             // check if spawn is required
             if (not_single < 1)
                 send_ready_to_spawn()
@@ -900,26 +1067,23 @@ Page {
                 var box = pgroup[i]
                 if (typeof box === 'undefined')
                     continue
-                box.virtual_move_to(grid_line(box.column), grid_line(box.row), 0)
+                var cur_top = box.get_virtual().y
+                var offset = cur_top - grid_line(box.row)
+                var y = offset < box_spacing ? grid_line(box.row) : cur_top
+                box.virtual_move_to(grid_line(box.column), y, 0)
                 box.floating = false
             }
             pgroup = []
             // drop all
-            gravitate()
+            send_start_gravity_timer()
         }
 
         function layout() {
             // destroy all previously existing boxes
-            if (typeof boxes !== 'undefined') {
-                for (var r = 0; r <= kAreaRows; ++r) {
-                    for (var c = 0; c < kAreaColumns; ++c) {
-                        if (typeof boxes[r][c] !== 'undefined') {
-                            boxes[r][c].destroy()
-                            boxes[r][c] = undefined
-                        }
-                    }
-                }
-            }
+            if (typeof boxes !== 'undefined')
+                apply_to_all_boxes(function(b) {
+                    b.destroy()
+                })
 
             boxes = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             used = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
@@ -928,26 +1092,26 @@ Page {
             max_number = 0
             score = 0
 
-            var hsize = table.width / kAreaColumns
-            var vsize = table.height / kAreaRows
-            box_total_size = Math.floor(Math.min(hsize, vsize))
-            box_spacing = box_total_size / 8
-            box_size = box_total_size - box_spacing
+            box_spacing = Logic.calculateBoxSpacing(kAreaColumns, table.width)
+            box_size = Logic.calcuateBoxSize(box_spacing)
+            box_total_size = box_size + box_spacing
             box_half_size = box_size / 2
             lift_offset = 0
             // init the lift rungs
-            var step = box_total_size / 5.0
+            var steps_total = 10
+            var step = box_total_size / steps_total
             lift_rungs = []
-            for (var i = 0; i < 4; ++i)
+            for (var i = 0; i + 1 < steps_total; ++i)
                 lift_rungs.push(step)
-            lift_rungs.push(box_total_size - 4 * step)
+            lift_rungs.push(box_total_size - (steps_total - 1) * step)
+            scroll_in_progress = false
 
             // init task queue
             task_queue = Util.queue_new()
             idle = true
 
             spawns = 0
-            start_lift()
+            game.add_task_start_scroll()
         }
     }
 }

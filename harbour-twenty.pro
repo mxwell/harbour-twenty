@@ -40,5 +40,5 @@ CONFIG += sailfishapp_i18n
 TRANSLATIONS += translations/harbour-twenty-de.ts
 
 RESOURCES += \
-    qml/graphics.qrc
+    qml/resources.qrc
 
