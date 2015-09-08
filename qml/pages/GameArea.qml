@@ -474,9 +474,6 @@ Page {
                     box.to_evolve = false
                     var digit = box.get_digit()
                     box.evolve()
-                    add_digit(digit + 1)
-                    rm_digit(digit)
-                    rm_digit(digit)
                     // destroy box in grid too, if it reached max value
                     if (digit + 1 === Logic.kMaxBoxNumber) {
                         boxes[box.row][box.column] = undefined
@@ -498,19 +495,20 @@ Page {
             if (typeof boxes[r][c] !== 'undefined') {
                 if (boxes[r][c].get_digit() !== box.get_digit()) {
                     console.log("ERROR: losing box at " + r + "," + c + ": replace " + boxes[r][c].get_digit() + " with " + box.get_digit())
-                    // FIXME now game is continued, though stats are fixed
-                    rm_digit(boxes[r][c].get_digit())
                 } else if (boxes[r][c] === box) {
                     console.log("ERROR: the same")
                     return true
                 }
 
                 box.unbind_all()
+                rm_digit(box.get_digit())
                 var saved = boxes[r][c]
                 saved.unbind_all()
+                rm_digit(saved.get_digit())
                 if (sound_on)
                     saved.make_sound()
                 saved.set_to_evolve()
+                add_digit(saved.get_digit() + 1)
                 box.set_to_destroy(function() {
                     send_evolve(saved)
                 })
