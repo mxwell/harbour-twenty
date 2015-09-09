@@ -70,7 +70,10 @@ Rectangle {
     function set_to_pop() {
         to_be_destroyed = true
         destroy_callback = function() {}
+        z = 100
         virtual_move_to(pos_x, -200, 0)
+        destroy_timer.interval = 1000
+        destroy_timer.start()
     }
 
     function get_virtual() {

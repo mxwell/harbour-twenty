@@ -196,7 +196,7 @@ Page {
 
                     Timer {
                         id: scroll_timer
-                        interval: 50
+                        interval: Logic.kScrollDelay
                         repeat: false
                         onTriggered: game.add_task_scroll()
                     }
@@ -469,18 +469,22 @@ Page {
         }
 
         function add_task_evolve(box) {
+            var digit = box.get_digit()
             run_or_schedule(Util.make_task("evolve", function() {
                 if (typeof box !== 'undefined' && box.to_evolve) {
                     box.to_evolve = false
-                    var digit = box.get_digit()
                     box.evolve()
                     // destroy box in grid too, if it reached max value
-                    if (digit + 1 === Logic.kMaxBoxNumber) {
+                    if (box.get_digit() === Logic.kMaxBoxNumber) {
                         boxes[box.row][box.column] = undefined
                         box.set_to_pop()
                     }
                 } else {
-                    console.log("ERROR: saved box is lost")
+                    // restore stats
+                    rm_digit(digit + 1)
+                    console.log("ERROR: saved box #" + digit + " is lost")
+                    if (not_single < 1)
+                        send_ready_to_spawn()
                 }
                 send_start_gravity_timer()
             }))
@@ -624,6 +628,8 @@ Page {
         }
 
         function rm_digit(digit) {
+            if (digit >= Logic.kMaxBoxNumber)
+                return
             --counts[digit]
             if (counts[digit] === 1)
                 --not_single
@@ -728,7 +734,7 @@ Page {
             var column = coordinate_to_grid(x)
             var row = coordinate_to_grid(y)
             if (0 > column || column >= kAreaColumns
-                  || 0 > row || row >= kAreaRows) {
+                  || 0 > row || row > kAreaRows) {
                 return
             }
             var picked = boxes[row][column]
@@ -752,7 +758,8 @@ Page {
         }
 
         function cell_is_free(row, column) {
-            return 0 <= row && row < kAreaRows &&
+            var lowest_row = scroll_in_progress ? kAreaRows : (kAreaRows - 1)
+            return 0 <= row && row < lowest_row + 1 &&
                    0 <= column && column < kAreaColumns &&
                    (typeof boxes[row][column] === 'undefined' || boxes[row][column].floating)
         }
@@ -776,6 +783,12 @@ Page {
             }
             var target = Util.make_point(x, y)
             var step_limit = box_half_size - kEps
+            var bottom_line = table.height - kEps - box_half_size
+            var lowest_row = kAreaRows - 1
+            if (scroll_in_progress) {
+                bottom_line += box_total_size
+                lowest_row += 1
+            }
 
             while (pgroup.length > 0) {
                 var center = center_of_box(pgroup[0])
@@ -798,13 +811,13 @@ Page {
                     var cur_center = center_of_box(pgroup[i])
                     var cur_next = Util.point_sum(cur_center, move)
                     cur_next.x = Math.min(Math.max(cur_next.x, box_half_size + kEps), table.width - kEps - box_half_size)
-                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps + lift_offset), table.height - kEps - box_half_size)
+                    cur_next.y = Math.min(Math.max(cur_next.y, box_half_size + kEps + lift_offset), bottom_line)
                     move = Util.point_diff(cur_next, cur_center)
                 }
 
                 // 3. Find bounding cells ranges
                 var left_column = kAreaColumns - 1, right_column = 0
-                var top_row = kAreaRows - 1, bottom_row = 0
+                var top_row = lowest_row, bottom_row = 0
                 for (var i in pgroup) {
                     var cur_center = center_of_box(pgroup[i])
                     var cur_next = Util.point_sum(cur_center, move)
@@ -815,8 +828,8 @@ Page {
                 }
                 left_column = Math.min(Math.max(left_column, 0), kAreaColumns - 1)
                 right_column = Math.min(Math.max(right_column, 0), kAreaColumns - 1)
-                top_row = Math.min(Math.max(top_row, 0), kAreaRows - 1)
-                bottom_row = Math.min(Math.max(bottom_row, 0), kAreaRows - 1)
+                top_row = Math.min(Math.max(top_row, 0), lowest_row)
+                bottom_row = Math.min(Math.max(bottom_row, 0), lowest_row)
 
                 // 3. Check for collision with boxes and push out
                 for (var column = left_column; column <= right_column; ++column) {
@@ -882,7 +895,7 @@ Page {
                 for (var i in pgroup) {
                     var next = Util.point_sum(center_of_box(pgroup[i]), move)
                     if (!(box_half_size < next.x && next.x < table.width - box_half_size)
-                            || !(box_half_size + lift_offset < next.y && next.y < table.height - box_half_size)) {
+                            || !(box_half_size + lift_offset < next.y && next.y < bottom_line + kEps)) {
                         console.log("intersection with walls")
                         return
                     }
@@ -950,7 +963,7 @@ Page {
          * * Note: method works with virtual coordinates.
          */
         function gravitate() {
-            var occupied = Util.make_2d_array(kAreaRows, kAreaColumns)
+            var occupied = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             Util.fill_2d_array(occupied, false)
             for (var i in pgroup) {
                 var b = pgroup[i]
@@ -961,27 +974,26 @@ Page {
                 mark_occupation(occupied, top_left.x + box_size, top_left.y + box_size)
             }
 
-            var stationary = Util.make_2d_array(kAreaRows, kAreaColumns)
+            var stationary = Util.make_2d_array(kAreaRows + 1, kAreaColumns)
             Util.fill_2d_array(stationary, false)
             var queue = []
             var qfront = 0
+            var lowest_row = scroll_in_progress ? kAreaRows : (kAreaRows - 1)
 
-            var marked = []
             var mark_stationary = function(b) {
                 if (typeof b === 'undefined')
                     return
                 var group = bfs(b)
                 for (var i in group) {
                     var t = group[i]
-                    if (t.row < kAreaRows && !stationary[t.row][t.column]) {
-                        marked.push(t.get_digit())
+                    if (!stationary[t.row][t.column]) {
                         stationary[t.row][t.column] = true
                         queue.push(t)
                     }
                 }
             }
 
-            for (var r = 0; r < kAreaRows; ++r) {
+            for (var r = 0; r <= lowest_row; ++r) {
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
                     if (typeof box === 'undefined') {
@@ -989,7 +1001,7 @@ Page {
                             mark_stationary(boxes[r - 1][c])
                         continue
                     }
-                    if (r + 1 >= kAreaRows || box.floating || box.to_evolve) {
+                    if (r >= lowest_row || box.floating || box.to_evolve) {
                         mark_stationary(boxes[r][c])
                     }
                 }
@@ -1011,7 +1023,7 @@ Page {
             }
             /* collect falling boxes */
             var falling = []
-            for (var r = 0; r < kAreaRows; ++r)
+            for (var r = 0; r <= lowest_row; ++r)
                 for (var c = 0; c < kAreaColumns; ++c) {
                     var box = boxes[r][c]
                     if (typeof box === 'undefined' || stationary[r][c])
@@ -1026,16 +1038,13 @@ Page {
             }
             // and bind them lower
             var lost = false // impact on pgroup
-            var merged = false // flag if any merge happened
             for (var i in falling) {
                 var box = falling[i]
                 var row = box.row + 1
                 var column = box.column
                 if (align_with_grid(box, row, column, 1))
                     continue
-                merged = true
                 if (boxes[row][column].floating) {
-                    merged = true
                     var id = pgroup.indexOf(boxes[row][column])
                     if (id >= 0) {
                         var p = pgroup[id]
