@@ -5,6 +5,8 @@ This is an open source implementation of [Twenty][link1], a fast-paced game with
 
 Platform: Sailfish OS.
 
+![alt screenshot](screenshot.png)
+
 How to play
 -----------
 
